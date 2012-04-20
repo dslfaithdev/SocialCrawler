@@ -1,0 +1,43 @@
+
+Social Packets crawler
+
+S. Felix Wu
+wu@cs.ucdavis.edu
+
+April 19, 2012
+
+>> Introduction
+
+This crawler will take two passes. The first pass will crawl only the
+post ID with a timestamp (the timestamp represents the "created_time").
+And, the second pass will crawl deep into each of the crawl.
+
+>> Control of Different Passes
+
+The control of the passes is via index.php --
+if you want pass 1, you should have:
+// include "postsCrawler.php"; 
+include "small_spc.php"; 
+
+Otherwise, for pass 2,
+include "postsCrawler.php"; 
+// include "small_spc.php"; 
+
+>> Transition from pass 1 to pass 2:
+
+Pass 1 will produce a file named posts_<fbid>.txt. <fbid> should be the
+user who performed the crawl of pass 1. For pass 2, you should rename
+it as posts.txt only.
+
+I have pre-crawled a few post ID files and I put them under posts_files
+sub-directory. If you like to crawl, please copy one of them under config
+and with the name posts.txt. Before you crawl, please make sure that you
+remove the lastcheck.* file (otherwise, you won't be able to crawl from the
+beginning).
+
+The result of pass 2 will be placed under the outputs directory.
+
+>> Coordination
+
+Please contact me and make sure that we won't double-crawl.
+
