@@ -46,15 +46,18 @@ fscanf($fbIDFilePtr, "%s\n", $fbGroupName);
 fclose($fbIDFilePtr);
 flush();
 echo "I am crawling [ ", $fbGroupID, " ] ", $fbGroupName;
-echo " from ", $currentPost, " index = ", $postsCount;
+echo " from ", $currentPost, " index = ", $postsCount. "<br/>";
 
 // Now, we can continue...
 if( $user )
   {
     while(!feof($postsFilePtr))
       {
+        fscanf($postsFilePtr, "%s\n", $currentTime);
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
+print "<br/>". $currentTime . $currentPost;
+flush();ob_flush();
 
 	sscanf($currentTime, "%13s", $timePrefix);
         $outFName = sprintf("outputs/%08d_%13s_%s.json",
@@ -82,10 +85,13 @@ if( $user )
 		fprintf($outFilePtr, "\n");
 		fflush($outFilePtr);
 
+        $ep_likes_page = 0;
+        if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))
 		$ep_likes_page = $ep_likes['paging']['next'];
 		if ($ep_likes_page)
 		  {
 		    $ep_likes = $facebook->api(substr($ep_likes_page, 26));
+print $ep_likes_page; flush(); ob_flush();
 		  }
 	      }
 	    else
@@ -120,6 +126,8 @@ if( $user )
 			    fprintf($outFilePtr, "\n");
 			    fflush($outFilePtr);
 
+                $ec_likes_page = 0;
+                if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))
 			    $ec_likes_page = $ec_likes['paging']['next'];
 			    if ($ec_likes_page)
 			      {
@@ -134,6 +142,8 @@ if( $user )
 		      } // ec_likes_page
 		  } // for each ec_comment
 
+       $ec_comments_page = 0;
+        if (isset($ec_comments['paging']) && isset($ec_comments['paging']['next']))
 		$ec_comments_page = $ec_comments['paging']['next'];
 		if ($ec_comments_page)
 		  {
@@ -150,8 +160,8 @@ if( $user )
 	// At this point, we are done with ONE post.
 	// so, let us close/record it!
 
-	fflush(outFilePtr);
-	fclose(outFilePtr);
+	fflush($outFilePtr);
+	fclose($outFilePtr);
 
 	if (!($lastCountFilePtr = fopen($lastCountFName, "w")))
 	  {
