@@ -1,43 +1,25 @@
 <?php
+require_once "./config/config.php";
 
-// Set up the Facebook application
-set_time_limit(120);
-ini_set('display_errors',0);
 echo "Hello, Crawler!!\n";
-
-define('APPID',"");
-define('APPSEC',"");
-define('nl', "<br>");
-
-require_once "./facebook-php/src/facebook.php";
-
-$facebook = new Facebook(array(
-			       'appId' => APPID,
-			       'secret' => APPSEC,
-			       'cookie' => true,
-			       'status' => true,
-			       'xfbml' => true,
-			       ));
-
-$user = $facebook->getUser();
 
 // First, let us try to figure out how many already done?
 $lastCountFName = sprintf("config/lastCount_%s.txt", $user);
-if (!($lastCountFilePtr = fopen($lastCountFName, "r")))
+if (file_exists($lastCountFName) && $lastCountFilePtr = fopen($lastCountFName, "r"))
   {
-    $lastCount = 0;
-  }
+     fscanf($lastCountFilePtr, "%d", $lastCount);
+   fclose($lastCountFilePtr);
+}
  else
    {
-     fscanf($lastCountFilePtr, "%d", $lastCount);
+    $lastCount = 0;
    }
-if ($lastCountFilePtr) fclose($lastCountFilePtr);
 
 // Second, fast-forward to the post ID entry we should continue this time.
 $postsCount = -1;
 $currentPost = 0;
 $postsFName = sprintf("config/posts.txt", $user);
-if (!($postsFilePtr = fopen($postsFName, "r")))
+if (!(file_exists($postsFName) && $postsFilePtr = fopen($postsFName, "r")))
   {
     echo "No Posts File available\n";
     flush();

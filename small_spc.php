@@ -1,25 +1,5 @@
 <?php
-
-set_time_limit(120);
-ini_set('display_errors',0);
-
-echo "small_SPC_inside";
-
-define('APPID',"");
-define('APPSEC',"");
-define('nl', "<br>");
-
-require_once "./facebook-php/src/facebook.php";
-
-$facebook = new Facebook(array(
-			       'appId' => APPID,
-			       'secret' => APPSEC,
-			       'cookie' => true,
-			       'status' => true,
-			       'xfbml' => true,
-			       ));
-
-$user = $facebook->getUser();
+require_once "./config/config.php";
 
 $cfname = sprintf("config/page_%s.txt", $user);
 if (!($configFilePtr = fopen($cfname, "r")))
