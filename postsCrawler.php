@@ -1,7 +1,40 @@
 <?php
 require_once "./config/config.php";
 
-$files = glob('posts_files/posts.txt.*');
+if( !$user )
+   {
+     try
+       {
+	 $params = array
+	   ('scope' => "email, sms, user_groups, friends_groups, read_stream",
+	    //  'redirect_uri' => "http://apps.facebook.com/spring_demo",
+	    );
+	 $redirect = $facebook->getLoginUrl($params);
+	 ?>
+	   <script>
+	      top.location = "<?php echo $redirect; ?>";
+	 </script>
+	     <?php
+	     }
+     catch (FacebookApiException $e)
+       {
+	 print_r($e);
+       }
+     return;
+   }
+
+if(isset($_GET['file'])) {
+  $file = $_GET['file'];
+  $file = 'posts_files/posts.txt.'.$file;
+  if (file_exists($file)){
+    $files = array($file);
+  }
+}
+// If we could not parse the get-var as a valid posts file just fall back to "all".
+if (!isset($files)) {
+  $files = glob('posts_files/posts.txt.*');
+}
+
 foreach($files as $file) {
   $id_file = substr($file, 22);
 
@@ -41,8 +74,6 @@ if (!(file_exists($postsFName) && $postsFilePtr = fopen($postsFName, "r")))
    }
 echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush();
 // Now, we can continue...
-if( $user )
-  {
     while(!feof($postsFilePtr))
       {
         fscanf($postsFilePtr, "%s\n", $currentTime);
@@ -176,27 +207,6 @@ if( $user )
       }
     echo "All Posts DONE!!!<br/>\n";
   }
- else
-   {
-     try
-       {
-	 $params = array
-	   ('scope' => "email, sms, user_groups, friends_groups, read_stream",
-	    //  'redirect_uri' => "http://apps.facebook.com/spring_demo",
-	    );
-	 $redirect = $facebook->getLoginUrl($params);
-	 ?>
-	   <script>
-	      top.location = "<?php echo $redirect; ?>";
-	 </script>
-	     <?php
-	     }
-     catch (FacebookApiException $e)
-       {
-	 print_r($e);
-       }
-   }
-}
 ?>
 
 <?php
