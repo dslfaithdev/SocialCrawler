@@ -1,10 +1,15 @@
 <?php
 require_once "./config/config.php";
 
-echo "Hello, Crawler!!\n";
+$files = glob('posts_files/posts.txt.*');
+foreach($files as $file) {
+  $id_file = substr($file, 22);
+
+  print "starting child for: ".$id_file; flush();ob_flush();
+
 
 // First, let us try to figure out how many already done?
-$lastCountFName = sprintf("config/lastCount_%s.txt", $user);
+$lastCountFName = sprintf("config/lastCount_%s_%s.txt", $id_file, $user);
 if (file_exists($lastCountFName) && $lastCountFilePtr = fopen($lastCountFName, "r"))
   {
      fscanf($lastCountFilePtr, "%d", $lastCount);
@@ -16,12 +21,12 @@ if (file_exists($lastCountFName) && $lastCountFilePtr = fopen($lastCountFName, "
    }
 
 // Second, fast-forward to the post ID entry we should continue this time.
-$postsCount = -1;
+$postsCount = 0;
 $currentPost = 0;
-$postsFName = sprintf("config/posts.txt", $user);
+$postsFName = $file;
 if (!(file_exists($postsFName) && $postsFilePtr = fopen($postsFName, "r")))
   {
-    echo "No Posts File available\n";
+    echo "No Posts File available<br/>\n";
     flush();
     return;
   }
@@ -34,20 +39,7 @@ if (!(file_exists($postsFName) && $postsFilePtr = fopen($postsFName, "r")))
 	 $postsCount += 1;
        }
    }
-
-// strictly speaking, we might not need the following --
-if (!($fbIDFilePtr = fopen('config/fbid.txt', 'r')))
-  {
-    echo "No Valid FB page identifier\n";
-    return;
-  }
-fscanf($fbIDFilePtr, "%s\n", $fbGroupID);
-fscanf($fbIDFilePtr, "%s\n", $fbGroupName);
-fclose($fbIDFilePtr);
-flush();
-echo "I am crawling [ ", $fbGroupID, " ] ", $fbGroupName;
-echo " from ", $currentPost, " index = ", $postsCount. "<br/>";
-
+echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush();
 // Now, we can continue...
 if( $user )
   {
@@ -56,12 +48,12 @@ if( $user )
         fscanf($postsFilePtr, "%s\n", $currentTime);
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
-print "<br/>". $currentTime . $currentPost;
-flush();ob_flush();
 
 	sscanf($currentTime, "%13s", $timePrefix);
-        $outFName = sprintf("outputs/%08d_%13s_%s.json",
+        $outFName = sprintf("outputs/%s_%08d_%13s_%s.json", $id_file,
 	                    $postsCount, $timePrefix, $currentPost);
+        print " " . get_execution_time() . "<br/>\n" . $outFName;
+        flush();ob_flush();
         if (!($outFilePtr = fopen($outFName, "w")))
           {
             return;
@@ -91,7 +83,7 @@ flush();ob_flush();
 		if ($ep_likes_page)
 		  {
 		    $ep_likes = $facebook->api(substr($ep_likes_page, 26));
-print $ep_likes_page; flush(); ob_flush();
+        print "."; flush(); ob_flush();
 		  }
 	      }
 	    else
@@ -103,6 +95,7 @@ print $ep_likes_page; flush(); ob_flush();
 	// ec_comments handling --
 	$ec_comments_page = 1;
 	$ec_comments = $facebook->api('/' . $currentPost . "/comments");
+  print "."; flush(); ob_flush();
 	while($ec_comments_page)
 	  {
 	    if ($ec_comments)
@@ -117,6 +110,7 @@ print $ep_likes_page; flush(); ob_flush();
 		    $ec_likes_page = 1;
 		    $ec_likes = $facebook->api
 		      ('/' . $ec_comment['id'] . "/likes");
+        print "."; flush(); ob_flush();
 		    while($ec_likes_page)
 		      {
 			if ($ec_likes)
@@ -133,6 +127,7 @@ print $ep_likes_page; flush(); ob_flush();
 			      {
 				$ec_likes = $facebook->api
 				  (substr($ec_likes_page, 26));
+        print "."; flush(); ob_flush();
 			      }
 			  }
 			else
@@ -149,6 +144,7 @@ print $ep_likes_page; flush(); ob_flush();
 		  {
 		    $ec_comments = $facebook->api
 		      (substr($ec_comments_page, 26));
+        print "."; flush(); ob_flush();
 		  }
 	      }
 	    else
@@ -178,7 +174,7 @@ print $ep_likes_page; flush(); ob_flush();
 	    sleep(2);
 	  }
       }
-    echo "All Posts DONE!!!\n";
+    echo "All Posts DONE!!!<br/>\n";
   }
  else
    {
@@ -200,5 +196,24 @@ print $ep_likes_page; flush(); ob_flush();
 	 print_r($e);
        }
    }
+}
 ?>
 
+<?php
+/**
+ * get execution time in seconds at current point of call in seconds
+ * @return float Execution time at this point of call
+ */
+function get_execution_time()
+{
+    static $microtime_start = null;
+    if($microtime_start === null)
+    {
+        $microtime_start = microtime(true);
+        return 0.0;
+    }
+    return microtime(true) - $microtime_start;
+}
+get_execution_time();
+
+?>

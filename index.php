@@ -1,7 +1,6 @@
 <?php
 
 ini_set('display_errors',1);
-echo "crawler3";
 
 /*
  * The control of the passes is via index.php --
