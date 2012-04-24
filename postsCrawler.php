@@ -1,13 +1,15 @@
 <?php
 require_once "./config/config.php";
 
+# Registering shutdown function to redirect users.
+register_shutdown_function('fatalErrorHandler');
+
 if( !$user )
    {
      try
        {
 	 $params = array
 	   ('scope' => "email, sms, user_groups, friends_groups, read_stream",
-	    //  'redirect_uri' => "http://apps.facebook.com/spring_demo",
 	    );
 	 $redirect = $facebook->getLoginUrl($params);
 	 ?>
@@ -90,7 +92,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
             return;
           }
 
-	$curr_feed = $facebook->api('/' . $currentPost);
+	$curr_feed = facebook_api_wrapper($facebook, '/' . $currentPost);
 
 	fprintf($outFilePtr, "%s\n", json_encode($curr_feed));
         fprintf($outFilePtr, "\n");
@@ -98,7 +100,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	// el_likes handling --
 	$ep_likes_page = 1;
-	$ep_likes = $facebook->api('/' . $currentPost . "/likes");
+	$ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes");
 	while($ep_likes_page)
 	  {
 	    if ($ep_likes)
@@ -113,7 +115,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		$ep_likes_page = $ep_likes['paging']['next'];
 		if ($ep_likes_page)
 		  {
-		    $ep_likes = $facebook->api(substr($ep_likes_page, 26));
+		    $ep_likes = facebook_api_wrapper($facebook, substr($ep_likes_page, 26));
         print "."; flush(); ob_flush();
 		  }
 	      }
@@ -125,7 +127,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	// ec_comments handling --
 	$ec_comments_page = 1;
-	$ec_comments = $facebook->api('/' . $currentPost . "/comments");
+	$ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost . "/comments");
   print "."; flush(); ob_flush();
 	while($ec_comments_page)
 	  {
@@ -139,8 +141,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		foreach ($ec_comments['data'] as $ec_comment)
 		  {
 		    $ec_likes_page = 1;
-		    $ec_likes = $facebook->api
-		      ('/' . $ec_comment['id'] . "/likes");
+		    $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
         print "."; flush(); ob_flush();
 		    while($ec_likes_page)
 		      {
@@ -156,8 +157,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 			    $ec_likes_page = $ec_likes['paging']['next'];
 			    if ($ec_likes_page)
 			      {
-				$ec_likes = $facebook->api
-				  (substr($ec_likes_page, 26));
+				$ec_likes = facebook_api_wrapper($facebook, substr($ec_likes_page, 26));
         print "."; flush(); ob_flush();
 			      }
 			  }
@@ -173,8 +173,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		$ec_comments_page = $ec_comments['paging']['next'];
 		if ($ec_comments_page)
 		  {
-		    $ec_comments = $facebook->api
-		      (substr($ec_comments_page, 26));
+		    $ec_comments = facebook_api_wrapper($facebook, substr($ec_comments_page, 26));
         print "."; flush(); ob_flush();
 		  }
 	      }
@@ -202,7 +201,15 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	if (($postsCount % 100) == 0)
 	  {
-	    sleep(2);
+        print "<br/>\nEven hundred count, extend Access_Token"; flush();
+        $facebook->api('/oauth/access_token', 'GET',
+          array(
+            'client_id' => $facebook->getAppId(),
+            'client_secret' => $facebook->getApiSecret(),
+            'grant_type' => 'fb_exchange_token',
+            'fb_exchange_token' => $facebook->getAccessToken()
+          )
+        );
 	  }
       }
     echo "All Posts DONE!!!<br/>\n";
@@ -225,5 +232,35 @@ function get_execution_time()
     return microtime(true) - $microtime_start;
 }
 get_execution_time();
+
+function facebook_api_wrapper($facebook, $url) {
+  $error = 0;
+  while (1) {
+    try {
+      $data = $facebook->api($url);
+      return $data;
+    } catch (Exception $e) {
+      print "#"; flush(); ob_flush();
+      if ($error > 4) {
+        die("<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>");
+      }
+      $error++;
+    }
+  }
+}
+
+function fatalErrorHandler()
+{
+  # Getting last error
+  $error = error_get_last();
+
+  # Checking if last error is a fatal error
+  if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR))
+  {
+    # Here we handle the error, displaying HTML, logging, ...
+    echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user';
+    echo "\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
+  }
+}
 
 ?>
