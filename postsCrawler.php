@@ -85,7 +85,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 	sscanf($currentTime, "%13s", $timePrefix);
         $outFName = sprintf("outputs/%s_%08d_%13s_%s.json", $id_file,
 	                    $postsCount, $timePrefix, $currentPost);
-        print " " . get_execution_time() . "<br/>\n" . $outFName;
+        print " " . get_execution_time(true) . "<br/>\n" . $outFName;
         flush();ob_flush();
         if (!($outFilePtr = fopen($outFName, "w")))
           {
@@ -201,7 +201,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	if (($postsCount % 100) == 0)
 	  {
-        print "<br/>\nEven hundred count, extend Access_Token"; flush();
+        print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; flush();
         $facebook->api('/oauth/access_token', 'GET',
           array(
             'client_id' => $facebook->getAppId(),
@@ -221,14 +221,22 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
  * get execution time in seconds at current point of call in seconds
  * @return float Execution time at this point of call
  */
-function get_execution_time()
+function get_execution_time($delta)
 {
     static $microtime_start = null;
+    static $microtime_delta = null;
     if($microtime_start === null)
     {
         $microtime_start = microtime(true);
+        $microtime_delta = $microtime_start;
         return 0.0;
     }
+    if($delta) {
+      $delta = microtime(true) - $microtime_delta;
+      $microtime_delta = microtime(true);
+      return $delta;
+    }
+    $microtime_delta = microtime(true);
     return microtime(true) - $microtime_start;
 }
 get_execution_time();
@@ -240,9 +248,10 @@ function facebook_api_wrapper($facebook, $url) {
       $data = $facebook->api($url);
       return $data;
     } catch (Exception $e) {
+      error_log(microtime(1) . ";". $e->getCode() .";".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
-      if ($error > 4) {
-        die("<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>");
+      if ($error > 10) {
+        die($e->getMessage()."Â<br/>\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n");
       }
       $error++;
     }
@@ -254,12 +263,13 @@ function fatalErrorHandler()
   # Getting last error
   $error = error_get_last();
 
+  error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
   # Checking if last error is a fatal error
   if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR))
   {
     # Here we handle the error, displaying HTML, logging, ...
-    echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user';
-    echo "\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
+    echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
+    echo "<br/>\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
   }
 }
 

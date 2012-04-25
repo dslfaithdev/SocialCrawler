@@ -4,3 +4,5 @@ config/posts.txt
 posts_files/*
 saved/*
 outputs/*
+*.tgz
+*.sh
