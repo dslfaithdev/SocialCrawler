@@ -9,9 +9,10 @@ do FILE=${A##*\.}
     awk \'{ORS=" "; s=($2/$1)
       print $2 "/" $1 " => " s*100  "% "
       if (s == 1) exit 0; printf "\n"; exit 1}\' && \
-    find ./outputs/ -name "${FILE}_*" | \
-      tar -czf ${FILE}.tgz -T - && \
-      echo "<a href=\"${FILE}.tgz\">${FILE}.tgz</a>"
+   test \! -f ${FILE}.tgz && \
+   find ./outputs/ -name "${FILE}_*" | \
+     tar -czf ${FILE}.tgz -T -
+   test -f ${FILE}.tgz && echo "<a href=\"${FILE}.tgz\">${FILE}.tgz</a>"
 done');
 flush();
 ?>
