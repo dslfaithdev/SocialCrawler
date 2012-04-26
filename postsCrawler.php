@@ -221,7 +221,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
  * get execution time in seconds at current point of call in seconds
  * @return float Execution time at this point of call
  */
-function get_execution_time($delta)
+function get_execution_time($delta = false)
 {
     static $microtime_start = null;
     static $microtime_delta = null;
@@ -248,10 +248,10 @@ function facebook_api_wrapper($facebook, $url) {
       $data = $facebook->api($url);
       return $data;
     } catch (Exception $e) {
-      error_log(microtime(1) . ";". $e->getCode() .";".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
+      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
       if ($error > 10) {
-        die($e->getMessage()."Â<br/>\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n");
+        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n");
       }
       $error++;
     }
@@ -269,7 +269,7 @@ function fatalErrorHandler()
   {
     # Here we handle the error, displaying HTML, logging, ...
     echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
-    echo "<br/>\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
+    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
   }
 }
 
