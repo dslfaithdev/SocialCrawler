@@ -93,6 +93,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
           }
 
 	$curr_feed = facebook_api_wrapper($facebook, '/' . $currentPost);
+    print "."; flush(); ob_flush();
 
 	fprintf($outFilePtr, "%s\n", json_encode($curr_feed));
         fprintf($outFilePtr, "\n");
@@ -101,6 +102,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 	// el_likes handling --
 	$ep_likes_page = 1;
 	$ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes");
+    print "L"; flush(); ob_flush();
 	while($ep_likes_page)
 	  {
 	    if ($ep_likes)
@@ -116,7 +118,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		if ($ep_likes_page)
 		  {
 		    $ep_likes = facebook_api_wrapper($facebook, substr($ep_likes_page, 26));
-        print "."; flush(); ob_flush();
+            print "L"; flush(); ob_flush();
 		  }
 	      }
 	    else
@@ -128,7 +130,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 	// ec_comments handling --
 	$ec_comments_page = 1;
 	$ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost . "/comments");
-  print "."; flush(); ob_flush();
+    print "C"; flush(); ob_flush();
 	while($ec_comments_page)
 	  {
 	    if ($ec_comments)
@@ -142,7 +144,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		  {
 		    $ec_likes_page = 1;
 		    $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
-        print "."; flush(); ob_flush();
+            print "l"; flush(); ob_flush();
 		    while($ec_likes_page)
 		      {
 			if ($ec_likes)
@@ -158,7 +160,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 			    if ($ec_likes_page)
 			      {
 				$ec_likes = facebook_api_wrapper($facebook, substr($ec_likes_page, 26));
-        print "."; flush(); ob_flush();
+                print "l"; flush(); ob_flush();
 			      }
 			  }
 			else
@@ -174,7 +176,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		if ($ec_comments_page)
 		  {
 		    $ec_comments = facebook_api_wrapper($facebook, substr($ec_comments_page, 26));
-        print "."; flush(); ob_flush();
+            print "C"; flush(); ob_flush();
 		  }
 	      }
 	    else
