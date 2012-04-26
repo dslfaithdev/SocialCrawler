@@ -111,7 +111,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		fflush($outFilePtr);
 
         $ep_likes_page = 0;
-        if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))
+        if (isset($ep_likes['paging']) && isset($ep_likes['paging']['next']))
 		$ep_likes_page = $ep_likes['paging']['next'];
 		if ($ep_likes_page)
 		  {
@@ -245,7 +245,7 @@ function facebook_api_wrapper($facebook, $url) {
   $error = 0;
   while (1) {
     try {
-      $data = $facebook->api($url);
+      $data = $facebook->api($url, 'GET', array('limit' => 500));
       return $data;
     } catch (Exception $e) {
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
