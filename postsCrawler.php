@@ -88,7 +88,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
 
-        if($offset != "" && !(($postsCount+$offset)%16)) {
+        if($offset != "" && (($postsCount+$offset)%16)) {
             continue;
         }
 

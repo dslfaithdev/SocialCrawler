@@ -12,10 +12,10 @@
 # And, login notifications in facebook must be turned off..
 #
 
+EMAIL='fredrik.e@gmail.com' # edit this
 EMAIL='YOUR_EMAIL' # edit this
-PASS='YOUR_PASSWORD' # edit this
 
-COOKIES='cookies${1}.txt'
+COOKIES="cookies${1}.txt"
 USER_AGENT='Firefox'
 
 URL=$2
