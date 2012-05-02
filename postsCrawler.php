@@ -25,6 +25,12 @@ if( !$user )
      return;
    }
 
+$offset = "";
+
+if(isset($_GET['offset'])) {
+  $offset=$_GET['offset'];
+}
+
 if(isset($_GET['file'])) {
   $file = $_GET['file'];
   $file = 'posts_files/posts.txt.'.$file;
@@ -44,7 +50,7 @@ foreach($files as $file) {
 
 
 // First, let us try to figure out how many already done?
-$lastCountFName = sprintf("config/lastCount_%s_%s.txt", $id_file, $user);
+$lastCountFName = sprintf("config/lastCount_%s_%s_%s.txt", $id_file, $offset, $user);
 if (file_exists($lastCountFName) && $lastCountFilePtr = fopen($lastCountFName, "r"))
   {
      fscanf($lastCountFilePtr, "%d", $lastCount);
@@ -81,6 +87,10 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
         fscanf($postsFilePtr, "%s\n", $currentTime);
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
+
+        if($offset != "" && !(($postsCount+$offset)%16)) {
+            continue;
+        }
 
 	sscanf($currentTime, "%13s", $timePrefix);
         $outFName = sprintf("outputs/%s_%08d_%13s_%s.json", $id_file,
