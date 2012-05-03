@@ -4,5 +4,8 @@ config/posts.txt
 posts_files/*
 saved/*
 outputs/*
+*.log
 *.tgz
+*.tar
 *.sh
+cookies*

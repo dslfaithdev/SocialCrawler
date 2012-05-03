@@ -230,7 +230,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 	  }
 	if ($lastCountFilePtr) fclose($lastCountFilePtr);
 
-	if (($postsCount % 100) == 0)
+	if ((($postsCount+$offset) % (100*$chunk)) == 0)
 	  {
         print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; flush();
         $facebook->api('/oauth/access_token', 'GET',
@@ -282,7 +282,7 @@ function facebook_api_wrapper($facebook, $url) {
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
       if ($error > 10) {
-        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n");
+        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".$_SERVER['REQUEST_URI']."\"</script>\n");
       }
       $error++;
     }
@@ -300,7 +300,7 @@ function fatalErrorHandler()
   {
     # Here we handle the error, displaying HTML, logging, ...
     echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
-    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
+    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".$_SERVER['REQUEST_URI']."\"</script>\n";
     print microtime(true) . "<br/>\n";
   }
 }
