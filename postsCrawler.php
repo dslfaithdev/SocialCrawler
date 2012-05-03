@@ -1,8 +1,6 @@
 <?php
 require_once "./config/config.php";
-
-# Registering shutdown function to redirect users.
-register_shutdown_function('fatalErrorHandler');
+require_once "./include/outputHandler.php";
 
 if( !$user )
    {
@@ -25,10 +23,29 @@ if( !$user )
      return;
    }
 
+// Don't run the rest of the script if we are just
+// here to check if the user is authenticated.
+if(isset($_GET['is_auth'])) {
+  exit;
+}
+
+# Registering shutdown function to redirect users.
+register_shutdown_function('fatalErrorHandler');
+
+# Save the output buffer to file AND print to screen.
+ob_implicit_flush(true);
+ob_end_flush();
+$obfw = new OB_FileWriter('log/'.time().'-'.session_id().'.log');
+$obfw->start();
+
 $offset = "";
+$chunk = 1;
 
 if(isset($_GET['offset'])) {
   $offset=$_GET['offset'];
+}
+if(isset($_GET['chunk'])) {
+  $chunk = $_GET['chunk'];
 }
 
 if(isset($_GET['file'])) {
@@ -46,7 +63,8 @@ if (!isset($files)) {
 foreach($files as $file) {
   $id_file = substr($file, 22);
 
-  print "starting child for: ".$id_file; flush();ob_flush();
+print "--START " . microtime(true) ." ".$_SERVER["REQUEST_URI"]."<br/>\n";
+print "starting processing: ".$id_file; flush();ob_flush();
 
 
 // First, let us try to figure out how many already done?
@@ -84,11 +102,12 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 // Now, we can continue...
     while(!feof($postsFilePtr))
       {
+      if(connection_aborted()) exit; //Test if the user is still there..
         fscanf($postsFilePtr, "%s\n", $currentTime);
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
 
-        if($offset != "" && (($postsCount+$offset)%16)) {
+        if($offset != "" && (($postsCount+$offset)%$chunk)) {
             continue;
         }
 
@@ -224,7 +243,8 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
         );
 	  }
       }
-    echo "All Posts DONE!!!<br/>\n";
+  print " " . get_execution_time(true) . "<br/>\n" . $id_file. "--" . "All Posts DONE! ";
+    print microtime(true) . "<br/>\n";
   }
 ?>
 
@@ -251,7 +271,6 @@ function get_execution_time($delta = false)
     $microtime_delta = microtime(true);
     return microtime(true) - $microtime_start;
 }
-get_execution_time();
 
 function facebook_api_wrapper($facebook, $url) {
   $error = 0;
@@ -282,7 +301,10 @@ function fatalErrorHandler()
     # Here we handle the error, displaying HTML, logging, ...
     echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
     echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
+    print microtime(true) . "<br/>\n";
   }
 }
 
+print microtime(true) . "<br/>\n";
+$obfw->end();
 ?>

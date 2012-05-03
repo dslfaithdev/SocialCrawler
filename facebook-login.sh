@@ -20,9 +20,9 @@ USER_AGENT='Firefox'
 
 URL=$2
 
-REDIRECT_URL=`curl -X GET "${URL}" \
+REDIRECT_URL=`curl -X GET "${URL}&is_auth=true" \
   --cookie $COOKIES --cookie-jar $COOKIES \
-  -m 1 -s \
+  -s \
   | sed -e '/https/!d' -e 's/.*"\(http.*\)".*/\1/'`
 
 if [ $REDIRECT_URL ]; then
@@ -33,15 +33,14 @@ if [ $REDIRECT_URL ]; then
     --user-agent $USER_AGENT \
     --cookie $COOKIES --cookie-jar $COOKIES \
     --location \
-    #-o /dev/null
+    -s -o /dev/null
 
   echo "Logging in to facebook.."
   curl -X POST 'https://login.facebook.com/login.php' \
     --user-agent $USER_AGENT \
     --data-urlencode "email=${EMAIL}" --data-urlencode "pass=${PASS}" \
     --cookie $COOKIES --cookie-jar $COOKIES \
-    
-    #-o /dev/null
+    -s -o /dev/null
 
 URL=${REDIRECT_URL}
 fi
