@@ -63,7 +63,26 @@ if (!isset($files)) {
 foreach($files as $file) {
   $id_file = substr($file, 22);
 
-print "--START " . microtime(true) ." ".$_SERVER["REQUEST_URI"]."<br/>\n";
+  //check if all is done.
+  $total = count(file($file))/2+1;
+  $done = count(glob("./outputs/".$id_file."_*"));
+  print $id_file . ": " . $done . "/" .$total;
+  if(($done/$total) == 1) {
+    print "- all done, continuing.<br/>\n"; ob_flush(); flush();
+    if(!file_exists($id_file.".tgz") && ($offset == "" || $offset == 1)) {
+      //create tgz archive.
+      $phar = new PharData($id_file.".tar");
+      $phar->buildFromDirectory("./outputs/", "/".$id_file."_/");
+      $phar->compress(Phar::GZ, 'tgz');
+      unlink($id_file.".tar");
+      print "compressed the output files<br/>\n"; ob_flush(); flush();
+
+    }
+
+    continue;
+  }
+
+print "--START " . microtime(true) ." ".selfURL()."<br/>\n";
 print "starting processing: ".$id_file; flush();ob_flush();
 
 
@@ -102,7 +121,10 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 // Now, we can continue...
     while(!feof($postsFilePtr))
       {
-      if(connection_aborted()) exit; //Test if the user is still there..
+        if(connection_aborted()) {
+          print "connection lost";
+return; //Test if the user is still there..
+        }
         fscanf($postsFilePtr, "%s\n", $currentTime);
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
@@ -110,14 +132,16 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
         if($offset != "" && (($postsCount+$offset)%$chunk)) {
             continue;
         }
-
+postTime();
 	sscanf($currentTime, "%13s", $timePrefix);
         $outFName = sprintf("outputs/%s_%08d_%13s_%s.json", $id_file,
 	                    $postsCount, $timePrefix, $currentPost);
-        print " " . get_execution_time(true) . "<br/>\n" . $outFName;
+        print " " . get_execution_time(true) . "<br/>\n";
         flush();ob_flush();
+        print  $outFName;
         if (!($outFilePtr = fopen($outFName, "w")))
           {
+            print "error opening the file: $outFName for writing";
             return;
           }
 
@@ -219,9 +243,11 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	fflush($outFilePtr);
 	fclose($outFilePtr);
+  file_put_contents('./log/logFile.log', time()."\t$currentPost\t".postTime()."\n", FILE_APPEND);
 
 	if (!($lastCountFilePtr = fopen($lastCountFName, "w")))
 	  {
+      print "error opening the file: $lastCountFName for writing";
 	    return;
 	  }
 	else
@@ -232,7 +258,7 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	if ((($postsCount+$offset) % (100*$chunk)) == 0)
 	  {
-        print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; flush();
+        print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; ob_flush();
         $facebook->api('/oauth/access_token', 'GET',
           array(
             'client_id' => $facebook->getAppId(),
@@ -272,6 +298,16 @@ function get_execution_time($delta = false)
     return microtime(true) - $microtime_start;
 }
 
+function postTime() {
+    static $postTime = null;
+    if($postTime === null) {
+        $postTime = microtime(true);
+    }
+    $delta = microtime(true) - $postTime;
+    $postTime = microtime(true);
+    return $delta;
+}
+
 function facebook_api_wrapper($facebook, $url) {
   $error = 0;
   while (1) {
@@ -282,7 +318,7 @@ function facebook_api_wrapper($facebook, $url) {
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
       if ($error > 10) {
-        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".$_SERVER['REQUEST_URI']."\"</script>\n");
+        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       }
       $error++;
     }
@@ -300,9 +336,16 @@ function fatalErrorHandler()
   {
     # Here we handle the error, displaying HTML, logging, ...
     echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
-    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".$_SERVER['REQUEST_URI']."\"</script>\n";
+    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".selfURL()."\"</script>\n";
     print microtime(true) . "<br/>\n";
   }
+}
+
+function selfURL()
+{
+  //isset($_SERVER["HTTPS"]) ? 'https' : 'http';
+  //$protocol = strleft(strtolower($_SERVER["SERVER_PROTOCOL"]), "/").$s;
+  return (isset($_SERVER["HTTPS"]) ? 'https' : 'http') ."://".$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI'];
 }
 
 print microtime(true) . "<br/>\n";
