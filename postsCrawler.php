@@ -196,6 +196,13 @@ postTime();
 		foreach ($ec_comments['data'] as $ec_comment)
 		  {
 		    $ec_likes_page = 1;
+        //TEST
+        if(!isset($ec_comment['likes'])) {
+          fprintf($outFilePtr, "{\"ec_likes\":{\"data\":[]}}\n\n");
+          fflush($outFilePtr);
+          continue;
+        }
+
 		    $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
             print "l"; flush(); ob_flush();
 		    while($ec_likes_page)
