@@ -1,8 +1,6 @@
 <?php
 require_once "./config/config.php";
-
-# Registering shutdown function to redirect users.
-register_shutdown_function('fatalErrorHandler');
+require_once "./include/outputHandler.php";
 
 if( !$user )
    {
@@ -25,6 +23,31 @@ if( !$user )
      return;
    }
 
+// Don't run the rest of the script if we are just
+// here to check if the user is authenticated.
+if(isset($_GET['is_auth'])) {
+  exit;
+}
+
+# Registering shutdown function to redirect users.
+register_shutdown_function('fatalErrorHandler');
+
+# Save the output buffer to file AND print to screen.
+ob_implicit_flush(true);
+ob_end_flush();
+$obfw = new OB_FileWriter('log/'.time().'-'.session_id().'.log');
+$obfw->start();
+
+$offset = "";
+$chunk = 1;
+
+if(isset($_GET['offset'])) {
+  $offset=$_GET['offset'];
+}
+if(isset($_GET['chunk'])) {
+  $chunk = $_GET['chunk'];
+}
+
 if(isset($_GET['file'])) {
   $file = $_GET['file'];
   $file = 'posts_files/posts.txt.'.$file;
@@ -40,11 +63,12 @@ if (!isset($files)) {
 foreach($files as $file) {
   $id_file = substr($file, 22);
 
-  print "starting child for: ".$id_file; flush();ob_flush();
+print "--START " . microtime(true) ." ".selfURL()."<br/>\n";
+print "starting processing: ".$id_file; flush();ob_flush();
 
 
 // First, let us try to figure out how many already done?
-$lastCountFName = sprintf("config/lastCount_%s_%s.txt", $id_file, $user);
+$lastCountFName = sprintf("config/lastCount_%s_%s_%s.txt", $id_file, $offset, $user);
 if (file_exists($lastCountFName) && $lastCountFilePtr = fopen($lastCountFName, "r"))
   {
      fscanf($lastCountFilePtr, "%d", $lastCount);
@@ -78,17 +102,31 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 // Now, we can continue...
     while(!feof($postsFilePtr))
       {
+        if(connection_aborted()) {
+          print "connection lost";
+return; //Test if the user is still there..
+        }
         fscanf($postsFilePtr, "%s\n", $currentTime);
         fscanf($postsFilePtr, "%s\n", $currentPost);
         $postsCount += 1;
 
+        if($offset != "" && (($postsCount+$offset)%$chunk)) {
+            continue;
+        }
+        system("grep -q $currentPost log/logFile.log", $return_var);
+        if($return_var == 0) {
+          continue;
+        }
+postTime();
 	sscanf($currentTime, "%13s", $timePrefix);
         $outFName = sprintf("outputs/%s_%08d_%13s_%s.json", $id_file,
 	                    $postsCount, $timePrefix, $currentPost);
-        print " " . get_execution_time(true) . "<br/>\n" . $outFName;
+        print " " . get_execution_time(true) . "<br/>\n";
         flush();ob_flush();
+        print  $outFName;
         if (!($outFilePtr = fopen($outFName, "w")))
           {
+            print "error opening the file: $outFName for writing";
             return;
           }
 
@@ -97,7 +135,6 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	fprintf($outFilePtr, "%s\n", json_encode($curr_feed));
         fprintf($outFilePtr, "\n");
-	fflush($outFilePtr);
 
 	// el_likes handling --
 	$ep_likes_page = 1;
@@ -110,7 +147,6 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		fprintf($outFilePtr, "{\"ep_likes\":%s}\n",
 			json_encode($ep_likes));
 		fprintf($outFilePtr, "\n");
-		fflush($outFilePtr);
 
         $ep_likes_page = 0;
         if (isset($ep_likes['paging']) && isset($ep_likes['paging']['next']))
@@ -138,11 +174,16 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 		fprintf($outFilePtr, "{\"ec_comments\":%s}\n",
 			json_encode($ec_comments));
 		fprintf($outFilePtr, "\n");
-		fflush($outFilePtr);
 
 		foreach ($ec_comments['data'] as $ec_comment)
 		  {
 		    $ec_likes_page = 1;
+        //TEST
+        if(!isset($ec_comment['likes'])) {
+          fprintf($outFilePtr, "{\"ec_likes\":{\"data\":[]}}\n\n");
+          continue;
+        }
+
 		    $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
             print "l"; flush(); ob_flush();
 		    while($ec_likes_page)
@@ -152,7 +193,6 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 			    fprintf($outFilePtr, "{\"ec_likes\":%s}\n",
 				    json_encode($ec_likes));
 			    fprintf($outFilePtr, "\n");
-			    fflush($outFilePtr);
 
                 $ec_likes_page = 0;
                 if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))
@@ -190,9 +230,11 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 
 	fflush($outFilePtr);
 	fclose($outFilePtr);
+  file_put_contents('./log/logFile.log', time()."\t$currentPost\t".postTime()."\n", FILE_APPEND);
 
 	if (!($lastCountFilePtr = fopen($lastCountFName, "w")))
 	  {
+      print "error opening the file: $lastCountFName for writing";
 	    return;
 	  }
 	else
@@ -201,9 +243,9 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
 	  }
 	if ($lastCountFilePtr) fclose($lastCountFilePtr);
 
-	if (($postsCount % 100) == 0)
+	if ((($postsCount+$offset) % (100*$chunk)) == 0)
 	  {
-        print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; flush();
+        print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; ob_flush();
         $facebook->api('/oauth/access_token', 'GET',
           array(
             'client_id' => $facebook->getAppId(),
@@ -214,7 +256,8 @@ echo " from ", $currentPost, " index = ", $postsCount ."  "; flush(); ob_flush()
         );
 	  }
       }
-    echo "All Posts DONE!!!<br/>\n";
+  print " " . get_execution_time(true) . "<br/>\n" . $id_file. "--" . "All Posts DONE! ";
+    print microtime(true) . "<br/>\n";
   }
 ?>
 
@@ -241,7 +284,16 @@ function get_execution_time($delta = false)
     $microtime_delta = microtime(true);
     return microtime(true) - $microtime_start;
 }
-get_execution_time();
+
+function postTime() {
+    static $postTime = null;
+    if($postTime === null) {
+        $postTime = microtime(true);
+    }
+    $delta = microtime(true) - $postTime;
+    $postTime = microtime(true);
+    return $delta;
+}
 
 function facebook_api_wrapper($facebook, $url) {
   $error = 0;
@@ -253,7 +305,7 @@ function facebook_api_wrapper($facebook, $url) {
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
       if ($error > 10) {
-        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n");
+        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       }
       $error++;
     }
@@ -271,8 +323,18 @@ function fatalErrorHandler()
   {
     # Here we handle the error, displaying HTML, logging, ...
     echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
-    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".$_SERVER['PHP_SELF']."\"</script>\n";
+    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".selfURL()."\"</script>\n";
+    print microtime(true) . "<br/>\n";
   }
 }
 
+function selfURL()
+{
+  //isset($_SERVER["HTTPS"]) ? 'https' : 'http';
+  //$protocol = strleft(strtolower($_SERVER["SERVER_PROTOCOL"]), "/").$s;
+  return (isset($_SERVER["HTTPS"]) ? 'https' : 'http') ."://".$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI'];
+}
+
+print microtime(true) . "<br/>\n";
+$obfw->end();
 ?>
