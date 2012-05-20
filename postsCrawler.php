@@ -63,25 +63,6 @@ if (!isset($files)) {
 foreach($files as $file) {
   $id_file = substr($file, 22);
 
-  //check if all is done.
-  $total = count(file($file))/2+1;
-  $done = count(glob("./outputs/".$id_file."_*"));
-  print $id_file . ": " . $done . "/" .$total;
-  if(($done/$total) == 1) {
-    print "- all done, continuing.<br/>\n"; ob_flush(); flush();
-    if(!file_exists($id_file.".tgz") && ($offset == "" || $offset == 1)) {
-      //create tgz archive.
-      $phar = new PharData($id_file.".tar");
-      $phar->buildFromDirectory("./outputs/", "/".$id_file."_/");
-      $phar->compress(Phar::GZ, 'tgz');
-      unlink($id_file.".tar");
-      print "compressed the output files<br/>\n"; ob_flush(); flush();
-
-    }
-
-    continue;
-  }
-
 print "--START " . microtime(true) ." ".selfURL()."<br/>\n";
 print "starting processing: ".$id_file; flush();ob_flush();
 
@@ -132,6 +113,10 @@ return; //Test if the user is still there..
         if($offset != "" && (($postsCount+$offset)%$chunk)) {
             continue;
         }
+        system("grep -q $currentPost log/logFile.log", $return_var);
+        if($return_var == 0) {
+          continue;
+        }
 postTime();
 	sscanf($currentTime, "%13s", $timePrefix);
         $outFName = sprintf("outputs/%s_%08d_%13s_%s.json", $id_file,
@@ -150,7 +135,6 @@ postTime();
 
 	fprintf($outFilePtr, "%s\n", json_encode($curr_feed));
         fprintf($outFilePtr, "\n");
-	fflush($outFilePtr);
 
 	// el_likes handling --
 	$ep_likes_page = 1;
@@ -163,7 +147,6 @@ postTime();
 		fprintf($outFilePtr, "{\"ep_likes\":%s}\n",
 			json_encode($ep_likes));
 		fprintf($outFilePtr, "\n");
-		fflush($outFilePtr);
 
         $ep_likes_page = 0;
         if (isset($ep_likes['paging']) && isset($ep_likes['paging']['next']))
@@ -191,7 +174,6 @@ postTime();
 		fprintf($outFilePtr, "{\"ec_comments\":%s}\n",
 			json_encode($ec_comments));
 		fprintf($outFilePtr, "\n");
-		fflush($outFilePtr);
 
 		foreach ($ec_comments['data'] as $ec_comment)
 		  {
@@ -199,7 +181,6 @@ postTime();
         //TEST
         if(!isset($ec_comment['likes'])) {
           fprintf($outFilePtr, "{\"ec_likes\":{\"data\":[]}}\n\n");
-          fflush($outFilePtr);
           continue;
         }
 
@@ -212,7 +193,6 @@ postTime();
 			    fprintf($outFilePtr, "{\"ec_likes\":%s}\n",
 				    json_encode($ec_likes));
 			    fprintf($outFilePtr, "\n");
-			    fflush($outFilePtr);
 
                 $ec_likes_page = 0;
                 if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))

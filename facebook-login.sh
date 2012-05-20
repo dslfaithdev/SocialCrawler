@@ -49,4 +49,4 @@ echo "Fetching data."
 curl -X GET "${URL}" \
   --user-agent $USER_AGENT \
   --cookie $COOKIES --cookie-jar $COOKIES \
-  --location -N
+  --location -N -s

@@ -19,19 +19,20 @@ EMAIL='' # edit this
 PASS='' # edit this
 
 USER_AGENT='Firefox'
+PIDS=""
 
 authenticate() {
   REDIRECT_URL=$1
   COOKIES=cookies$2.txt
 
-  echo "Making oauth authentication.."
+  echo "$2 Making oauth authentication.."
   curl -X GET "${REDIRECT_URL}" \
     --user-agent $USER_AGENT \
     --cookie $COOKIES --cookie-jar $COOKIES \
     --location \
     -s -o /dev/null
 
-  echo "Logging in to facebook.."
+  echo "$2 Logging in to facebook.."
   curl -X POST 'https://login.facebook.com/login.php' \
     --user-agent $USER_AGENT \
     --data-urlencode "email=${EMAIL}" --data-urlencode "pass=${PASS}" \
@@ -39,15 +40,15 @@ authenticate() {
     --location \
     -s -o /dev/null
 
-  echo "Trying once more.."
+  echo "$2 Trying once more.."
   curl -X GET "$REDIRECT_URL" \
     --user-agent $USER_AGENT \
     --cookie $COOKIES --cookie-jar $COOKIES \
-    --location -N -s \
-    |tee cache$2
+    --location -s -m 12000 \
+    |tee  cache$2
 
   REDIRECT_URL=`sed -e '/top\.location/!d'  \
-    -e 's/.*"\(http.*\)".*/\1/' < cache$2`
+    -e 's/.*"\(.*\)".*/\1/' < cache$2`
 
 }
 
@@ -57,28 +58,30 @@ get_data()
 {
   URL=${2}
   while true; do
+    echo "$1: $URL"
     curl -X GET "${URL}" \
       --user-agent $USER_AGENT \
       --cookie cookies${1}.txt --cookie-jar cookies${1}.txt \
-      --location -N -s \
-      |tee cache${1}
+      --location -m 12000 -s \
+      | tee cache${1}
 
     REDIRECT_URL=`sed -e '/top\.location/!d'  \
-      -e 's/.*"\(http.*\)".*/\1/' < cache${1}`
+      -e 's/.*"\(.*\)".*/\1/' < cache${1}`
 
     if [ -z "$REDIRECT_URL" ]
     then
+      cp cache${1} error${1}_`date +%s`
       break
     fi
 
     if [ "${REDIRECT_URL#*facebook.com}" != "$REDIRECT_URL" ]
     then
       authenticate "$REDIRECT_URL" $1
+    else
+      URL="$REDIRECT_URL"
     fi
 
-    URL="$REDIRECT_URL"
-
-    sleep 120
+    sleep 30
 
   done
 }
@@ -86,16 +89,21 @@ get_data()
 if [ $# -eq 2 ]
 then
   OPERATOR="?"
-  if [ "${2#*?}" != "$2" ]; then
+  if [ "${2#*\?}" != "$2" ]; then
     OPERATOR="&"
   fi
  for ID in `seq $1`
    do
     get_data "$ID" "$2${OPERATOR}offset=$ID&chunk=$1" &
+    echo "My PID=$$"
+    echo "Background function PID=$!"
+    PIDS="$PIDS $!"
  done
 else
- get_data "1" "$1"
+ get_data "1" "$1" &
 fi
 
+trap 'kill $PIDS $(jobs -p)' SIGINT SIGTERM
 
+wait
 
