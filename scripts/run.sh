@@ -62,7 +62,7 @@ get_data()
     curl -X GET "${URL}" \
       --user-agent $USER_AGENT \
       --cookie cookies${1}.txt --cookie-jar cookies${1}.txt \
-      --location -m 12000 -s \
+      --location -m 12000 -s -N \
       | tee cache${1}
 
     REDIRECT_URL=`sed -e '/top\.location/!d'  \
@@ -71,7 +71,8 @@ get_data()
     if [ -z "$REDIRECT_URL" ]
     then
       cp cache${1} error${1}_`date +%s`
-      break
+      REDIRECT_URL="$URL"
+      tail -n 1 cache${1} | grep 'ALL OK!' && break
     fi
 
     if [ "${REDIRECT_URL#*facebook.com}" != "$REDIRECT_URL" ]
@@ -103,7 +104,7 @@ else
  get_data "1" "$1" &
 fi
 
-trap 'kill $PIDS $(jobs -p)' SIGINT SIGTERM
+#trap 'kill $PIDS $(jobs -p)' SIGINT SIGTERM
 
 wait
 
