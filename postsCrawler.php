@@ -258,6 +258,14 @@ postTime();
       }
   print " " . get_execution_time(true) . "<br/>\n" . $id_file. "--" . "All Posts DONE! ";
     print microtime(true) . "<br/>\n";
+    if (!($lastCountFilePtr = fopen($lastCountFName, "w"))) {
+      print "error opening the file: $lastCountFName for writing";
+      return;
+    }
+    else {
+      fprintf($lastCountFilePtr, "%d", $postsCount);
+      fclose($lastCountFilePtr);
+    }
   }
 ?>
 
@@ -336,5 +344,7 @@ function selfURL()
 }
 
 print microtime(true) . "<br/>\n";
+print "Script ended gracefully.\n\nALL OK!\n";
+
 $obfw->end();
 ?>
