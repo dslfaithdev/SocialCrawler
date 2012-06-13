@@ -55,6 +55,13 @@ if(isset($_GET['file'])) {
     $files = array($file);
   }
 }
+while(true) {
+  $ran = rand(0,20);
+  print "Sleep for a while ($ran s)\n<br/>";
+  ob_flush();flush();
+  sleep($ran); print "\n<br/>@@ Woke up, will run postFiles.sh @@\n<br/>";ob_flush();flush();
+  system('scripts/postsFiles.sh 2>&1');
+
 // If we could not parse the get-var as a valid posts file just fall back to "all".
 if (!isset($files)) {
   $files = glob('posts_files/posts.txt.*');
@@ -267,6 +274,8 @@ postTime();
       fclose($lastCountFilePtr);
     }
   }
+sleep(60);
+}
 ?>
 
 <?php
