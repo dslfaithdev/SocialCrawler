@@ -1,0 +1,4 @@
+config/config.php
+outputs/*
+log/*
+*.log
