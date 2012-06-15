@@ -36,9 +36,12 @@ for A in posts_files/posts.txt.*; do
 done
 
 #How many files do we have?
+P=`pwd`
 
 while [ `ls -1 posts_files/posts.txt.*|wc -l` -le 3 ]; do
   #Pull a new posts.txt. file.
-  (cd posts_files; curl -JO# "${URL}?action=pull" 2>/dev/null)
+  cd posts_files
+  curl -JO# "${URL}?action=pull" 2>/dev/null || exit 1
+  cd $P
 done
 
