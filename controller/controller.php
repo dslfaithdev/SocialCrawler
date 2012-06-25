@@ -1,11 +1,43 @@
 <?php
 /*
- * Assumes a sqlite3 database called database.db containing:
- * CREATE TABLE page(
- * id integer primary key autoincrement,
- * name VARCHAR(255));
- * CREATE TABLE post(id integer primary key autoincrement,post_id varchar(48),page_id integer,seq int,date varchar(13),data blob, status varchar(40), time_stamp int, who carchar(60), time int,foreign key (page_id) references page(id));
+ * Assumes a (my)sql database like this:
+--
+-- Table structure for table `page`
+--
+
+DROP TABLE IF EXISTS `page`;
+CREATE TABLE `page` (
+  `id` int(11) NOT NULL auto_increment,
+  `name` varchar(255) default NULL,
+  PRIMARY KEY  (`id`)
+) ENGINE=MyISAM AUTO_INCREMENT=554 DEFAULT CHARSET=latin1;
+
+--
+-- Table structure for table `post`
+--
+
+DROP TABLE IF EXISTS `post`;
+CREATE TABLE `post` (
+  `id` int(32) NOT NULL default '0',
+  `post_id` varchar(48) default NULL,
+  `page_id` int(11) default NULL,
+  `seq` int(11) default NULL,
+  `date` varchar(13) default NULL,
+  `data` longblob,
+  `status` varchar(40) default NULL,
+  `time_stamp` int(11) default NULL,
+  `who` varchar(60) default NULL,
+  `time` float default NULL,
+  PRIMARY KEY  (`id`),
+  UNIQUE KEY `post_id` (`post_id`),
+  KEY `page_id` (`page_id`)
+) ENGINE=MyISAM AUTO_INCREMENT=2427809 DEFAULT CHARSET=latin1;
+ *
+ * Don't forget to set the default values below.
  */
+define(_PDO_dsn_,'Data Source Name');
+define(_PDO_username_,'username');
+define(_PDO_password_, 'password');
 
 
 error_reporting(E_ALL);
@@ -32,7 +64,9 @@ default:
 
 #Checkout file, add to db.
 function checkout() {
-  $dbh = new PDO("sqlite:database.db");
+  set_time_limit(120);
+  $count =0;
+  $dbh = new PDO(PDO_dsn, PDO_username, PDO_password);
   $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   //Read file for now.
   $files = glob('posts-files/posts.txt.*');
@@ -50,12 +84,13 @@ function checkout() {
     $result->closeCursor();
 
     //Create page row.
+    $count++;
     $sql = "INSERT INTO page (name) VALUES (".$file.")";
     $dbh->query($sql);
     $insertId = $dbh->lastInsertId();
     $postsCount = 0;
-    $sql = 'INSERT INTO post (page_id, time_stamp, status, seq, date, post_id)'.
-      ' VALUES ( '.$insertId.',strftime(\'%s\', \'now\'), \'new\', ?, ?, ?)';
+    $sql = 'INSERT IGNORE INTO post (page_id, time_stamp, status, seq, date, post_id)'.
+      ' VALUES ( '.$insertId.', UNIX_TIMESTAMP(), \'new\', ?, ?, ?)';
     $sth = $dbh->prepare($sql);
     while(!feof($postsFilePtr)){
       fscanf($postsFilePtr, "%s\n", $currentTime);
@@ -64,6 +99,7 @@ function checkout() {
       $sth->execute(array($postsCount,$currentTime,$currentPost));
     }
   }
+  print "$count rows added.\n<br/>";
 }
 
 function pull_post($count=3) {
@@ -71,18 +107,18 @@ function pull_post($count=3) {
     $count = intval($_GET['count']);
   if($count < 1)
     $count = 3;
-  $db = new PDO("sqlite:database.db");
+  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
   $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
   $id = array();
   $sql = "SELECT id, post_id FROM post WHERE ".
-    "((status='pulled' AND strftime('%s','now')-time_stamp > 100) ".
-    "OR status='new') LIMIT ".$db->quote($count);
+    "((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) ".
+    "OR status='new') LIMIT ".intval($count);
   $result = $db->query($sql);
-//  print $sql;
   $sql ="";
   while(($row=$result->fetch())) {
       $sql .= "UPDATE post SET status = 'pulled', ".
-        "time_stamp = strftime('%s', 'now'), ".
+        "time_stamp = UNIX_TIMESTAMP(), ".
         "who = ".$db->quote($_SERVER["REMOTE_ADDR"].":".$_SERVER["REMOTE_PORT"]).
         " WHERE id = '".$row['id']."'; ";
       $id[]=$row['post_id'];
@@ -100,8 +136,8 @@ function pull_post($count=3) {
 }
 
 function my_push() {
-  file_put_contents('logFile.log', serialize($_POST));
-  $db = new PDO("sqlite:database.db");
+#  file_put_contents('logFile.log', serialize($_POST));
+  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
   $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   foreach ($_POST as $post_id => $post){
     if(!isset($post['data'], $post['exec_time']))
@@ -112,16 +148,18 @@ function my_push() {
       $sql = "UPDATE post SET status = 'done'".
         ", data = ".$db->quote($post['data']).
         ", time = ".$db->quote($post['exec_time']).
-        ", time_stamp = strftime('%s', 'now')".
+        ", time_stamp = UNIX_TIMESTAMP()".
         ", who = ".$db->quote($_SERVER["REMOTE_ADDR"].":".$_SERVER["REMOTE_PORT"]).
-        " WHERE post_id = ".$db->quote($post_id).";";
+        " WHERE id = '".$row['id']."'; ";
+#      file_put_contents('log/'.$row['id'].'.json.gz', base64_decode($post['data']));
     } else {
       die("No post with id $post_id in db");
     }
     $result->closeCursor();
     $query = $db->exec($sql);
+    if($query != 1)
+      die("DB error, try again.");
   }
-  print "Pushed to db.\n";  return;
 }
 
 function my_list() {
@@ -133,20 +171,21 @@ function my_list() {
 <script type="text/javascript" id="js">$(document).ready(function() {
   // call the tablesorter plugin
   $("table").tablesorter({
-    // sort on the first column and third column, order asc
-    sortList: [[2,1],[0,0]]
+    sortList: [[0,1],[2,0]]
   });
 }); </script>
 
   <?
-  $db = new PDO("sqlite:database.db");
+  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
   $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
   print "<table id='myTable' class='tablesorter'>";
-  print "<thead><tr><th>Name</th><th>Exec Time (s)</th><th>Status</th><th>Pulled</th><th> Status (%)</th></tr></thead>";
-  $sql_status = "SELECT name, SUM(time),".
-    "COUNT(CASE WHEN status = 'done' THEN 1 END) || '/'|| COUNT(*),".
-    "COUNT(CASE WHEN status = 'pulled' THEN 1 END) || '/'|| COUNT(*),".
-    "COUNT(CASE WHEN status = 'done' THEN 1 END)*100.0/COUNT(*) ".
+  print "<thead><tr><th> Status (%)</th><th>Name</th><th>Time</th><th>Exec Time (s)</th><th>Status</th><th>Pulled</th></tr></thead>";
+  $sql_status = "SELECT ".
+    "ROUND(COUNT(CASE WHEN status = 'done' THEN 1 END)*100.0/COUNT(*),4), ".
+    "name, FROM_UNIXTIME(time_stamp), ROUND(SUM(time), 4),".
+    "CONCAT(COUNT(CASE WHEN status = 'done' THEN 1 END),'/', COUNT(*)) ,".
+    "CONCAT(COUNT(CASE WHEN status = 'pulled' THEN 1 END) , '/',COUNT(*))".
     "FROM page JOIN post WHERE post.page_id=page.id GROUP BY page.id;";
   $query = $db->query($sql_status);
   print "<tbody>";
