@@ -22,7 +22,7 @@ $obfw->start();
 while(true) {
   $out = array();
   #Fetch new id's
-  $result = curl_get(URL, array("action" => "pull","count" => 5));
+  $result = curl_get(URL, array("action" => "pull","count" => 3));
   $posts = explode('&',$result);
   if(count($posts) < 1 || $posts[0] === '0') {
     print "Did not receive any new posts :/.\nWill take a nap and try again.\n"; ob_flush();flush();
@@ -47,7 +47,13 @@ while(true) {
 #    file_put_contents('outputs/'.$currentPost.'gz', $data);
   }
   //Push changes
-  print "--- " . curl_post(URL.'?action=push', $out);
+  for($i=0; $i<10; $i++) {
+    $curl_result =curl_post(URL.'?action=push', $out);
+    if($curl_result === "Pushed to db.\n")
+      break;
+    sleep(10);
+  }
+  print "--- " .$curl_result;
   //break;
 }
 
@@ -144,7 +150,7 @@ function crawl($currentPost, $facebook) {
     }
   }
 
-  print " " . get_execution_time(true) . "<br/>\n";
+  print " " . get_execution_time(true) . "<br/>\n";flush(); ob_flush();
   // At this point, we are done with ONE post.
   return $out;
 }
@@ -237,8 +243,13 @@ function facebook_api_wrapper($facebook, $url) {
     } catch (Exception $e) {
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
+      sleep(10);
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
         return "";
+      if (strpos($e->getMessage(), "(#613)") !== false) //We got a error 613 "Calls to stream have exceeded the rate of 600 calls per 600 seconds."
+        sleep(rand(30,120));
+      if (strpos($e->getMessage(), "(#4)") !== false) //We got a error 4 "User request limit reached"
+        sleep(rand(30,120));
       if ($error > 10) {
         die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       }
@@ -296,7 +307,7 @@ function curl_post($url, array $post = NULL, array $options = array())
     CURLOPT_FRESH_CONNECT => 1,
     CURLOPT_RETURNTRANSFER => 1,
     CURLOPT_FORBID_REUSE => 1,
-    CURLOPT_TIMEOUT => 4,
+    CURLOPT_TIMEOUT => 30,
     CURLOPT_POSTFIELDS => http_build_query($post)
   );
 
@@ -304,7 +315,7 @@ function curl_post($url, array $post = NULL, array $options = array())
   curl_setopt_array($ch, ($options + $defaults));
   if(($result = curl_exec($ch)) === false)
   {
-    trigger_error(curl_error($ch));
+    trigger_error(curl_error($ch) . "\n $url");
   }
   curl_close($ch);
   return $result;
@@ -323,14 +334,14 @@ function curl_get($url, array $get = NULL, array $options = array())
     CURLOPT_URL => $url. (strpos($url, '?') === FALSE ? '?' : ''). http_build_query($get),
     CURLOPT_HEADER => 0,
     CURLOPT_RETURNTRANSFER => TRUE,
-    CURLOPT_TIMEOUT => 4
+    CURLOPT_TIMEOUT => 30
   );
 
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
   if(($result = curl_exec($ch)) === false)
   {
-    trigger_error(curl_error($ch));
+    trigger_error(curl_error($ch) . "\n $url");
   }
   if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
     die("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
