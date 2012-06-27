@@ -143,7 +143,8 @@ function my_push() {
     if(!isset($post['data'], $post['exec_time']))
       die("Wrong parameters");
     //Make sure that we already have the posts file in the DB.
-    $result = $db->query("SELECT id FROM post WHERE post_id = ".$db->quote($post_id));
+    $sql="SELECT post.id, CONCAT(page.name , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'_', post_id ,'.json')  AS fname FROM post JOIN page ON post.page_id=page.id WHERE post_id=".$db->quote($post_id);
+    $result = $db->query($sql);
     if(($row=$result->fetch())) {
       $sql = "UPDATE post SET status = 'done'".
         ", data = ".$db->quote($post['data']).
@@ -151,7 +152,7 @@ function my_push() {
         ", time_stamp = UNIX_TIMESTAMP()".
         ", who = ".$db->quote($_SERVER["REMOTE_ADDR"].":".$_SERVER["REMOTE_PORT"]).
         " WHERE id = '".$row['id']."'; ";
-#      file_put_contents('log/'.$row['id'].'.json.gz', base64_decode($post['data']));
+      file_put_contents('done/raw/'.$row['fname'], gzinflate(substr(base64_decode($post['data']),10,-8)));
     } else {
       die("No post with id $post_id in db");
     }
@@ -160,6 +161,7 @@ function my_push() {
     if($query != 1)
       die("DB error, try again.");
   }
+  print "Pushed to db.\n";  return;
 }
 
 function my_list() {
