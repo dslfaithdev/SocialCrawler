@@ -16,17 +16,19 @@ register_shutdown_function('fatalErrorHandler');
 # Save the output buffer to file AND print to screen.
 ob_implicit_flush(true);
 //ob_end_flush();
-$obfw = new OB_FileWriter('log/'.session_id().'.log');
+$obfw = new OB_FileWriter('log/session.log');
 $obfw->start();
 
 while(true) {
   $out = array();
   #Fetch new id's
-  $result = curl_get(URL, array("action" => "pull","count" => 3));
+  try {
+    $result = trim(curl_get(URL, array("action" => "pull","count" => 5)));
+  } catch (Exception $e) { continue; }
   $posts = explode('&',$result);
-  if(count($posts) < 1 || $posts[0] === '0') {
+  if(count($posts) < 1 || empty($posts[0])) {
     print "Did not receive any new posts :/.\nWill take a nap and try again.\n"; ob_flush();flush();
-    sleep(1200); //20 min.
+    sleep(1800); //30 min.
     continue;
   }
   foreach($posts as $currentPost) {
@@ -39,7 +41,9 @@ while(true) {
     if(($token['expire_time']-(2*60*60)) < time()) #Renew accessToken
       renewAccessToken();
     $start_time = microtime(true);
+    try {
     $data = crawl($currentPost, $facebook);
+    } catch(Exception $e) { continue; }
     $out[$currentPost]['exec_time'] = microtime(true)-$start_time;
 #    file_put_contents('outputs/'.$currentPost, $data);
     $data = base64_encode(gzencode($data));
@@ -48,12 +52,13 @@ while(true) {
   }
   //Push changes
   for($i=0; $i<10; $i++) {
-    $curl_result =curl_post(URL.'?action=push', $out);
+    $curl_result = curl_post(URL.'?action=push', $out);
+    print "--- " .$curl_result;
+    flush();ob_flush();
     if($curl_result === "Pushed to db.\n")
       break;
     sleep(10);
   }
-  print "--- " .$curl_result;
   //break;
 }
 
@@ -238,20 +243,24 @@ function facebook_api_wrapper($facebook, $url) {
   $error = 0;
   while (1) {
     try {
-      $data = $facebook->api($url, 'GET', array('limit' => 500));
+      $data = $facebook->api($url, 'GET', array('limit' => 200));
       return $data;
     } catch (Exception $e) {
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
       print "#"; flush(); ob_flush();
       sleep(10);
+      if (strpos($e->getMessage(), "Unsupported get request") !== false)
+        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
         return "";
       if (strpos($e->getMessage(), "(#613)") !== false) //We got a error 613 "Calls to stream have exceeded the rate of 600 calls per 600 seconds."
-        sleep(rand(30,120));
+        sleep(rand(60,240));
       if (strpos($e->getMessage(), "(#4)") !== false) //We got a error 4 "User request limit reached"
-        sleep(rand(30,120));
+        sleep(rand(60,240));
       if ($error > 10) {
-        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
+        sleep(600);
+        trigger_error($e->getMessage(), E_USER_WARNING);
+        # die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       }
       $error++;
     }
@@ -313,9 +322,13 @@ function curl_post($url, array $post = NULL, array $options = array())
 
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
   if(($result = curl_exec($ch)) === false)
   {
     trigger_error(curl_error($ch) . "\n $url");
+  }
+  if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
+    trigger_error("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
   }
   curl_close($ch);
   return $result;
@@ -339,12 +352,13 @@ function curl_get($url, array $get = NULL, array $options = array())
 
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
   if(($result = curl_exec($ch)) === false)
   {
     trigger_error(curl_error($ch) . "\n $url");
   }
   if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
-    die("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
+    trigger_error("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
   }
   curl_close($ch);
   return $result;
