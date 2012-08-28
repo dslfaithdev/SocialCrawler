@@ -135,23 +135,38 @@ function pull_post($count=3) {
   $db = new PDO(PDO_dsn, PDO_username, PDO_password);
   $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
-  $id = array();
-  $sql = "SELECT id, post_id FROM post WHERE ".
-    "((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) ".
-    "OR status='new') LIMIT ".intval($count);
+  //Make sure we are not already adding items to our helper table.
+  for ($i = 0; $i < 20; $i++) {
+      $result = $db->query("SELECT count(*) FROM pull_posts WHERE id = -1");
+      if ($result->fetchColumn() == 0)
+          break;
+      sleep(10);
+  }
+  $result = $db->query("SELECT count(*) FROM pull_posts WHERE id != -1");
+  if ($result->fetchColumn() <= $count + 10) {
+      // Add posts to our helper..
+      $sql = "INSERT INTO pull_posts VALUES (-1);";
+      $sql .= "INSERT INTO pull_posts SELECT id FROM post FORCE INDEX (id_status_timestamp) WHERE ((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status='new') ORDER BY id LIMIT 500;";
+      $sql .= "DELETE FROM pull_posts WHERE id = -1;";
+      $db->query($sql);
+  }
+  $sql = "SELECT id FROM pull_posts LIMIT ".intval($count);
   $result = $db->query($sql);
+  $rows=$result->fetchAll();
+  $id = array();
   $sql ="";
-  while(($row=$result->fetch())) {
+  foreach ($rows as $row){
       $sql .= "UPDATE post SET status = 'pulled', ".
         "time_stamp = UNIX_TIMESTAMP(), ".
         "who = ".$db->quote($_SERVER["REMOTE_ADDR"].":".$_SERVER["REMOTE_PORT"]).
-        " WHERE id = '".$row['id']."'; ";
-      $id[]=$row['post_id'];
+        " WHERE id = '".$row['id']."'; DELETE FROM pull_posts WHERE id =  ".$row['id'].";";
+      $result = $db->query("SELECT post_id FROM post WHERE id = ".$row['id']);
+      $id[]=$result->fetchColumn();
   }
   $result->closeCursor();
+  $result = $db->exec($sql);
   if(count($id) == 0)
     die("0&No new posts");
-  $result = $db->exec($sql);
   if($result == 0) {
     header('HTTP/1.1 501 Not Implemented');
     die("Error updating DB");
@@ -181,7 +196,6 @@ function my_push() {
           ") on duplicate key UPDATE ".
           "data = ".$db->quote($post['data']).";";
       file_put_contents('raw/'.$row['fname'], gzinflate(substr(base64_decode($post['data']),10,-8)));
-#      file_put_contents('statements.sql', "-- ".$row['fname']."\n".parseJsonString(gzinflate(substr(base64_decode($post['data']),10,-8))),FILE_APPEND);
     } else {
       die("No post with id $post_id in db");
     }
