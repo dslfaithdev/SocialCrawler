@@ -26,7 +26,7 @@ CREATE TABLE `post` (
   `data` longblob,
   `status` varchar(40) DEFAULT NULL,
   `time_stamp` int(11) DEFAULT NULL,
-  `who` varchar(60) DEFAULT NULL,
+  `who` int(10) unsigned DEFAULT NULL,
   `time` float DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `post_id` (`post_id`),
@@ -158,7 +158,7 @@ function pull_post($count=3) {
   foreach ($rows as $row){
       $sql .= "UPDATE post SET status = 'pulled', ".
         "time_stamp = UNIX_TIMESTAMP(), ".
-        "who = ".$db->quote($_SERVER["REMOTE_ADDR"].":".$_SERVER["REMOTE_PORT"]).
+        "who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]). ") ".
         " WHERE id = '".$row['id']."'; DELETE FROM pull_posts WHERE id =  ".$row['id'].";";
       $result = $db->query("SELECT post_id FROM post WHERE id = ".$row['id']);
       $id[]=$result->fetchColumn();
@@ -187,7 +187,7 @@ function my_push() {
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
       $sql = "UPDATE post SET status = 'done'".
-        ", who = ".$db->quote($_SERVER["REMOTE_ADDR"].":".$_SERVER["REMOTE_PORT"]).
+        ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
         ", time = ".$db->quote($post['exec_time']).
         ", time_stamp = UNIX_TIMESTAMP()".
         " WHERE id = ".$row['id']."; ";
