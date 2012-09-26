@@ -22,10 +22,13 @@ $obfw->start();
 while(true) {
   $out = array();
   #Fetch new id's
+  get_execution_time(true);
   try {
     $result = trim(curl_get(URL, array("action" => "pull","count" => 5)));
-  } catch (Exception $e) { continue; }
+  } catch (Exception $e) { sleep(30); continue; }
   $posts = explode('&',$result);
+  print "\n+++ Pulled " .count($posts)." post(s) ".get_execution_time(1)."\n";
+  flush();ob_flush();
   if(count($posts) < 1 || empty($posts[0])) {
     print "Did not receive any new posts :/.\nWill take a nap and try again.\n"; ob_flush();flush();
     sleep(1800); //30 min.
@@ -52,8 +55,9 @@ while(true) {
   }
   //Push changes
   for($i=0; $i<10; $i++) {
+  get_execution_time(1);
     $curl_result = curl_post(URL.'?action=push', $out);
-    print "--- " .$curl_result;
+    print "--- ".trim($curl_result) ." ".get_execution_time(1)."\n";
     flush();ob_flush();
     if($curl_result === "Pushed to db.\n")
       break;
@@ -155,7 +159,7 @@ function crawl($currentPost, $facebook) {
     }
   }
 
-  print " " . get_execution_time(true) . "<br/>\n";flush(); ob_flush();
+  print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
   // At this point, we are done with ONE post.
   return $out;
 }
@@ -241,16 +245,18 @@ function postTime() {
 
 function facebook_api_wrapper($facebook, $url) {
   $error = 0;
+  global $start_time;
   while (1) {
     try {
       $data = $facebook->api($url, 'GET', array('limit' => 200));
       return $data;
     } catch (Exception $e) {
+      $t = time(1);
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
-      print "#"; flush(); ob_flush();
       sleep(10);
+      print "#"; flush(); ob_flush();
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
-        die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
+        return "";
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
         return "";
       if (strpos($e->getMessage(), "(#613)") !== false) //We got a error 613 "Calls to stream have exceeded the rate of 600 calls per 600 seconds."
@@ -259,9 +265,11 @@ function facebook_api_wrapper($facebook, $url) {
         sleep(rand(60,240));
       if ($error > 10) {
         sleep(600);
-        trigger_error($e->getMessage(), E_USER_WARNING);
+        throw $e;
+        # trigger_error($e->getMessage(), E_USER_WARNING);
         # die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       }
+      $start_time += (time(1)-$t);
       $error++;
     }
   }
