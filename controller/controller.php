@@ -152,6 +152,8 @@ function pull_post($count=3) {
   }
   $sql = "SELECT id FROM pull_posts LIMIT ".intval($count);
   $result = $db->query($sql);
+  if($result->rowCount() == 0)
+    die("0&No new posts");
   $rows=$result->fetchAll();
   $id = array();
   $sql ="";

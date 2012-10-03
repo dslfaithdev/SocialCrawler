@@ -45,7 +45,10 @@ while(true) {
       renewAccessToken();
     $start_time = microtime(true);
     try {
-    $data = crawl($currentPost, $facebook);
+      if(strpos($currentPost, '_') === false)
+        $data = fb_page_extract($currentPost, $facebook);
+      else
+        $data = crawl($currentPost, $facebook);
     } catch(Exception $e) { continue; }
     $out[$currentPost]['exec_time'] = microtime(true)-$start_time;
 #    file_put_contents('outputs/'.$currentPost, $data);
@@ -64,6 +67,24 @@ while(true) {
     sleep(10);
   }
   //break;
+}
+
+function fb_page_extract($page, $facebook) {
+  get_execution_time(true);
+  print  $page; flush();ob_flush();
+  $out="";
+  $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time';
+  while(1) {
+    $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
+    print "."; flush(); ob_flush();
+    foreach($fb_data['data'] as $curr_feed)
+      $out .= sprintf("%s\n%s\n", $curr_feed['id'], $curr_feed['created_time']);
+    if (!isset($fb_data['paging'],$fb_data['paging']['next']))
+      break;
+    $page = $fb_data['paging']['next'];
+  }
+  print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
+  return $out;
 }
 
 function crawl($currentPost, $facebook) {
@@ -117,8 +138,7 @@ function crawl($currentPost, $facebook) {
 
       foreach ($ec_comments['data'] as $ec_comment) {
         $ec_likes_page = 1;
-        //TEST
-        if(!isset($ec_comment['likes'])) {
+        if(!isset($ec_comment['like_count']) || $ec_comment['like_count'] == 0) {
           #              fprintf($outFilePtr, "{\"ec_likes\":{\"data\":[]}}\n\n");
           $out .= "{\"ec_likes\":{\"data\":[]}}\n\n";
           continue;
@@ -256,9 +276,9 @@ function facebook_api_wrapper($facebook, $url) {
       sleep(10);
       print "#"; flush(); ob_flush();
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
-        return "";
+        return "$e-getMessage()";
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
-        return "";
+        return "$e-getMessage()";
       if (strpos($e->getMessage(), "(#613)") !== false) //We got a error 613 "Calls to stream have exceeded the rate of 600 calls per 600 seconds."
         sleep(rand(60,240));
       if (strpos($e->getMessage(), "(#4)") !== false) //We got a error 4 "User request limit reached"
