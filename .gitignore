@@ -2,3 +2,6 @@ config/config.php
 outputs/*
 log/*
 *.log
+controller/crawled
+controller/posts
+controller/raw

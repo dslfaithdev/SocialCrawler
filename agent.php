@@ -78,7 +78,7 @@ function fb_page_extract($page, $facebook) {
     $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
     print "."; flush(); ob_flush();
     foreach($fb_data['data'] as $curr_feed)
-      $out .= sprintf("%s\n%s\n", $curr_feed['id'], $curr_feed['created_time']);
+      $out = sprintf("%s\n%s\n", $curr_feed['id'], $curr_feed['created_time']) . $out;
     if (!isset($fb_data['paging'],$fb_data['paging']['next']))
       break;
     $page = $fb_data['paging']['next'];
@@ -344,7 +344,7 @@ function curl_post($url, array $post = NULL, array $options = array())
     CURLOPT_FRESH_CONNECT => 1,
     CURLOPT_RETURNTRANSFER => 1,
     CURLOPT_FORBID_REUSE => 1,
-    CURLOPT_TIMEOUT => 30,
+    CURLOPT_TIMEOUT => 600,
     CURLOPT_POSTFIELDS => http_build_query($post)
   );
 
@@ -375,7 +375,7 @@ function curl_get($url, array $get = NULL, array $options = array())
     CURLOPT_URL => $url. (strpos($url, '?') === FALSE ? '?' : ''). http_build_query($get),
     CURLOPT_HEADER => 0,
     CURLOPT_RETURNTRANSFER => TRUE,
-    CURLOPT_TIMEOUT => 30
+    CURLOPT_TIMEOUT => 600
   );
 
   $ch = curl_init();
