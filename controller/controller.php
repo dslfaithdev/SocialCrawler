@@ -74,7 +74,6 @@ if(isset($_GET['action']))
 switch ($action) {
 case 'add':
   checkout();
-  my_list();
   break;
 case 'pull':
   pull_post();
@@ -125,6 +124,39 @@ function checkout() {
     }
   }
   print "$count rows added.<br/>\n";
+}
+
+/*
+    Updates and adds new posts to crawl to the db.
+    returns number of rows added/modified or false on error
+ */
+function update_posts($page, $posts){
+  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+  $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+
+  //Verify that the page exist in the page table.
+  $sql = "SELECT id from page where fb_id=$page; ";
+  $sql .= "UPDATE post SET status = 'done'".
+      ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
+      ", time_stamp = UNIX_TIMESTAMP()".
+      " WHERE post_id = ".$page."; ";
+  $sth = $db->query($sql);
+  $page_id = $sth->fetchColumn();
+  if( $page_id === false)
+      return false;
+  $sql = "INSERT INTO post (page_id, time_stamp, status, seq, date, post_id)".
+      " VALUES ( $page_id, UNIX_TIMESTAMP(), 'new', :seq, :date, :id)".
+      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date= :date, seq=:seq;";
+  $sth = $db->prepare($sql);
+  //$sth->execute(array(':seq'=> $seq,'date'=>$date,'id'=>$id))
+  $seq=1;
+  //A bit ugly but needed to split the post format (`date`\n`post`) into usable values
+  $arr=explode("\n",trim($posts));
+  reset($arr);
+  while(list(,$date) = each($arr)){
+    $sth->execute(array(':seq'=> $seq++,'id'=>$date,'date'=>each($arr)[1]));
+  }
+  return $seq;
 }
 
 function pull_post($count=3) {
