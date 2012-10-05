@@ -87,7 +87,7 @@ default:
 
 #Checkout file, add to db.
 function checkout() {
-  set_time_limit(300);
+  set_time_limit(0);
   $count =0;
   $dbh = new PDO(PDO_dsn, PDO_username, PDO_password);
   $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
@@ -216,6 +216,11 @@ function my_push() {
   foreach ($_POST as $post_id => $post){
     if(!isset($post['data'], $post['exec_time']))
       die("Wrong parameters");
+    //Is it a stage one crawl.
+    if(strpos($post_id, '_') === false){
+        update_posts($post_id, gzinflate(substr(base64_decode($post['data']),10,-8)));
+        continue;
+    }
     //Make sure that we already have the posts file in the DB.
     $sql="SELECT post.id, CONCAT(page.name , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'_', post_id ,'.json')  AS fname FROM post JOIN page ON post.page_id=page.id WHERE post_id=".$db->quote($post_id);
     $result = $db->query($sql);
