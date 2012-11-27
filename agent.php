@@ -125,6 +125,22 @@ function crawl($currentPost, $facebook) {
     }
   } // done with el_likes!
 
+  // ep_shares
+  if(isset($curr_feed['shares'],$curr_feed['shares']['count']) && $curr_feed['shares']['count'] != 0) {
+    $page = substr(strrchr($currentPost, '_'),1). '/sharedposts?fields=from,updated_time,created_time,to';
+    while($page) {
+      $fb_data = facebook_api_wrapper($facebook, $page);
+      print "S"; flush(); ob_flush();
+      $out .= sprintf("{\"ep_shares\":%s}\n\n", json_encode($fb_data));
+      if (isset($fb_data['paging'],$fb_data['paging']['next']))
+        $page = substr($fb_data['paging']['next'], 26);
+      else
+        $page = NULL;
+    }
+  } else {
+    $out .= "{\"ep_shares\":{\"data\":[]}}\n\n";
+  }// done with ep_shares
+
   // ec_comments handling --
   $ec_comments_page = 1;
   $ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost . "/comments");
