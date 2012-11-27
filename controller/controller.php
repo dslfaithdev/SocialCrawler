@@ -88,7 +88,7 @@ default:
 #Checkout file, add to db.
 function checkout() {
   set_time_limit(0);
-  $count =0;
+  $count = 0;
   $dbh = new PDO(PDO_dsn, PDO_username, PDO_password);
   $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   //Read file for now.
@@ -108,10 +108,12 @@ function checkout() {
     print "Adding $file <br/>\n"; flush(); ob_flush();
     //Create page row.
     $count++;
+    $dbh->query("START TRANSACTION");
     $sql = "INSERT INTO page (name) VALUES (".$file.")";
     $dbh->query($sql);
     $insertId = $dbh->lastInsertId();
     $postsCount = 0;
+
     $sql = 'INSERT IGNORE INTO post (page_id, time_stamp, status, seq, date, post_id)'.
       ' VALUES ( '.$insertId.', UNIX_TIMESTAMP(), \'new\', ?, ?, ?)';
     $sth = $dbh->prepare($sql);
@@ -122,8 +124,10 @@ function checkout() {
       $sth->execute(array($postsCount,$currentTime,$currentPost));
       $sth->closeCursor();
     }
+    $dbh->query("COMMIT");
+    print "\t+ $postsCount rows added.<br/>\n"; flush(); ob_flush();
   }
-  print "$count rows added.<br/>\n";
+  print "$count pages added.<br/>\n";
 }
 
 /*
@@ -133,9 +137,10 @@ function checkout() {
 function update_posts($page, $posts){
   $db = new PDO(PDO_dsn, PDO_username, PDO_password);
   $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  $db->query("START TRANSACTION");
 
   //Verify that the page exist in the page table.
-  $sql = "SELECT id from page where fb_id=$page; ";
+  $sql = "SELECT page_id from post where post_id=$page; ";
   $sql .= "UPDATE post SET status = 'done'".
       ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
       ", time_stamp = UNIX_TIMESTAMP()".
@@ -146,7 +151,7 @@ function update_posts($page, $posts){
       return false;
   $sql = "INSERT INTO post (page_id, time_stamp, status, seq, date, post_id)".
       " VALUES ( $page_id, UNIX_TIMESTAMP(), 'new', :seq, :date, :id)".
-      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date= :date, seq=:seq;";
+      " ON DUPLICATE KEY UPDATE page_id=$page_id, time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
   $sth = $db->prepare($sql);
   //$sth->execute(array(':seq'=> $seq,'date'=>$date,'id'=>$id))
   $seq=1;
@@ -156,6 +161,7 @@ function update_posts($page, $posts){
   while(list(,$date) = each($arr)){
     $sth->execute(array(':seq'=> $seq++,'id'=>$date,'date'=>each($arr)[1]));
   }
+    $db->query("COMMIT");
   return $seq;
 }
 
@@ -167,7 +173,7 @@ function pull_post($count=3) {
   $db = new PDO(PDO_dsn, PDO_username, PDO_password);
   $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
-  //Make sure we are not already adding items to our helper table.
+//Make sure we are not already adding items to our helper table.
   for ($i = 0; $i < 20; $i++) {
       $result = $db->query("SELECT count(*) FROM pull_posts WHERE id = -1");
       if ($result->fetchColumn() == 0)
@@ -177,11 +183,19 @@ function pull_post($count=3) {
   $result = $db->query("SELECT count(*) FROM pull_posts WHERE id != -1");
   if ($result->fetchColumn() <= $count + 10) {
       // Add posts to our helper..
-      $sql = "INSERT INTO pull_posts VALUES (-1);";
-      $sql .= "INSERT INTO pull_posts SELECT id FROM post FORCE INDEX (id_status_timestamp) WHERE ((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status='new') ORDER BY id LIMIT 500;";
+      $sql = "set session binlog_format = 'MIXED'; INSERT INTO pull_posts VALUES (-1);";
+      #$sql .= "INSERT INTO pull_posts SELECT id FROM post FORCE INDEX (id_status_timestamp) WHERE ((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status='new') ORDER BY id LIMIT 500;";
+      $sql .= "INSERT INTO pull_posts ".
+          "SELECT id FROM ".
+          "(SELECT id, if(status='pulled', 0, time_stamp) as ts FROM ".
+          "post FORCE INDEX (id_status_timestamp) WHERE ".
+          "((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status IN ('new', 'updated')) ".
+          "ORDER BY ts) AS tmp LIMIT 500;";
       $sql .= "DELETE FROM pull_posts WHERE id = -1;";
       $db->query($sql);
   }
+  for($i=0;$i<5;$i++) { //This should be a mysql procedure.
+    $db->query("set session binlog_format = 'MIXED'; START TRANSACTION");
   $sql = "SELECT id FROM pull_posts LIMIT ".intval($count);
   $result = $db->query($sql);
   if($result->rowCount() == 0)
@@ -199,11 +213,15 @@ function pull_post($count=3) {
   }
   $result->closeCursor();
   $result = $db->exec($sql);
+    $db->query("COMMIT");
+  if ($result !== 0 && count($id) !== 0)
+      break;
+  }
   if(count($id) == 0)
     die("0&No new posts");
   if($result == 0) {
     header('HTTP/1.1 501 Not Implemented');
-    die("Error updating DB");
+    die("1");//"&Error updating DB\n$sql");
   }
   print implode('&',$id);
 
