@@ -81,6 +81,9 @@ case 'pull':
 case 'push':
   my_push();
   break;
+case 'stageone':
+  stageone();
+  break;
 default:
   my_list();
 }
@@ -410,5 +413,44 @@ function my_list() {
     print "</tr>\n";
   }
   print "</tbody></table>";
+}
+
+function stageone() {
+  if(!isset($_GET['name'], $_GET['id'])) {
+    die('
+  <html><body>
+    <form  action="'.$_SERVER['PHP_SELF'].'">
+      Group name: <input type="text" name="name"/><br/>
+      Group id: <input type="text" name="id"/><br/>
+      <input type="hidden" value="stageone" name="action"/>
+      <input type="submit" value="Submit">
+    </form>
+  </body></html>');
+  }
+
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  } catch (PDOException $e) {
+    die("DB error, try again.");
+  }
+  $name = $db->quote($_GET['name']);
+  if(($id = intval($_GET['id'])) == 0)
+    die("Wrong parameters");
+
+  $sql = "BEGIN;\n";
+  $sql .= "INSERT INTO page (fb_id, name) VALUES ($id, $name);\n";
+  $sql .= "INSERT INTO post (page_id, time_stamp, status, seq, post_id, page_fb_id)".
+    " VALUES ( LAST_INSERT_ID(), UNIX_TIMESTAMP(), 'new', 0, $id, $id".
+    ") ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated';\n";
+  $sql .= "COMMIT;";
+  $count = $db->exec($sql);
+  if($db->errorCode() == 0) {
+    print "Added new group to crawl";
+    return;
+  }
+
+  print "Errors occurred";
+  print_r($db->errorInfo());
 }
 ?>
