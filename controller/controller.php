@@ -58,9 +58,9 @@ CREATE TABLE `pull_posts` (
  *
  * Don't forget to set the default values below.
  */
-define(_PDO_dsn_,'Data Source Name');
-define(_PDO_username_,'username');
-define(_PDO_password_, 'password');
+define('PDO_dsn','mysql:dbname=crawling;unix_socket=/tmp/mysql.sock');
+define('PDO_username','root');
+define('PDO_password', '');
 
 
 error_reporting(E_ALL);
@@ -89,8 +89,12 @@ default:
 function checkout() {
   set_time_limit(0);
   $count = 0;
-  $dbh = new PDO(PDO_dsn, PDO_username, PDO_password);
-  $dbh->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  } catch (PDOException $e) {
+    die("DB error, try again.");
+  }
   //Read file for now.
   $files = glob('posts/posts.txt.*');
   //$postsFName = $file;
@@ -135,8 +139,12 @@ function checkout() {
     returns number of rows added/modified or false on error
  */
 function update_posts($page, $posts){
-  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-  $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  } catch (PDOException $e) {
+    return false;
+  }
   $db->query("START TRANSACTION");
 
   //Verify that the page exist in the page table.
@@ -170,9 +178,13 @@ function pull_post($count=3) {
     $count = intval($_GET['count']);
   if($count < 1)
     $count = 3;
-  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-  $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-  $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
+  } catch (PDOException $e) {
+    die("0&No new posts"); //only command understood by the agent.
+  }
 //Make sure we are not already adding items to our helper table.
   for ($i = 0; $i < 20; $i++) {
       $result = $db->query("SELECT count(*) FROM pull_posts WHERE id = -1");
@@ -229,10 +241,14 @@ function pull_post($count=3) {
 
 function my_push() {
 #  file_put_contents('logFile.log', serialize($_POST));
-  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-  $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+  } catch (PDOException $e) {
+    die("DB error, try again.");
+  }
   foreach ($_POST as $post_id => $post){
-    if(!isset($post['data'], $post['exec_time']))
+    if(!isset($post['data'], $post['exec_time'])) if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
     //Is it a stage one crawl.
     if(strpos($post_id, '_') === false){
@@ -245,7 +261,7 @@ function my_push() {
     if(($row=$result->fetch())) {
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
-        ", time = ".$db->quote($post['exec_time']).
+        ", time = ".$post['exec_time'].
         ", time_stamp = UNIX_TIMESTAMP()".
         " WHERE id = ".$row['id']."; ";
       $sql .= "INSERT INTO post_data VALUES (".$row['id'].
@@ -369,9 +385,13 @@ function my_list() {
 
   <?
   flush();
-  $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-  $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-  $db->setAttribute(PDO::ATTR_TIMEOUT, "30");
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "30");
+  } catch (PDOException $e) {
+    die("DB error, try again.");
+  }
   print "<table id='myTable' class='tablesorter'>";
   print "<thead><tr><th data-placeholder=\"--\">Status (%)</th><th>Name</th><th>Last modification time</th><th data-placeholder=\"--\">Exec Time (s)</th><th data-placeholder=\"try /\d+\\//\">Status</th><th>Pulled</th></tr></thead>";
   $sql_status = "SELECT ".
