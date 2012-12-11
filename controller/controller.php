@@ -61,7 +61,9 @@ CREATE TABLE `pull_posts` (
 define('PDO_dsn','mysql:dbname=crawling;unix_socket=/tmp/mysql.sock');
 define('PDO_username','root');
 define('PDO_password', '');
+#$GLOBALS['maintenance']=TRUE;
 
+include_once('parser.php');
 
 error_reporting(E_ALL);
 ini_set("display_errors", 1);
@@ -104,9 +106,9 @@ function checkout() {
   foreach ($files as $postsFName){
     if (!(file_exists($postsFName) && $postsFilePtr = fopen($postsFName, "r")))
       return "error opening the file";
-    $file = $dbh->quote(substr(strrchr($postsFName,"."),1));
+    $file = $db->quote(substr(strrchr($postsFName,"."),1));
     //Make sure the file does not exist.
-    $result = $dbh->query("SELECT * FROM page WHERE name=$file");
+    $result = $db->query("SELECT * FROM page WHERE name=$file");
     if(($row=$result->fetch())) {
       $result->closeCursor();
       continue;
@@ -115,15 +117,15 @@ function checkout() {
     print "Adding $file <br/>\n"; flush(); ob_flush();
     //Create page row.
     $count++;
-    $dbh->query("START TRANSACTION");
+    $db->query("START TRANSACTION");
     $sql = "INSERT INTO page (name) VALUES (".$file.")";
-    $dbh->query($sql);
-    $insertId = $dbh->lastInsertId();
+    $db->query($sql);
+    $insertId = $db->lastInsertId();
     $postsCount = 0;
 
     $sql = 'INSERT IGNORE INTO post (page_id, time_stamp, status, seq, date, post_id)'.
       ' VALUES ( '.$insertId.', UNIX_TIMESTAMP(), \'new\', ?, ?, ?)';
-    $sth = $dbh->prepare($sql);
+    $sth = $db->prepare($sql);
     while(!feof($postsFilePtr)){
       fscanf($postsFilePtr, "%s\n", $currentTime);
       fscanf($postsFilePtr, "%s\n", $currentPost);
@@ -131,7 +133,7 @@ function checkout() {
       $sth->execute(array($postsCount,$currentTime,$currentPost));
       $sth->closeCursor();
     }
-    $dbh->query("COMMIT");
+    $db->query("COMMIT");
     print "\t+ $postsCount rows added.<br/>\n"; flush(); ob_flush();
   }
   print "$count pages added.<br/>\n";
@@ -177,6 +179,8 @@ function update_posts($page, $posts){
 }
 
 function pull_post($count=3) {
+  if(isset($GLOBALS['maintenance']))
+    die("0&maintenance try later");
   if(isset($_GET['count']))
     $count = intval($_GET['count']);
   if($count < 1)
@@ -227,8 +231,12 @@ function pull_post($count=3) {
       $id[]=$result->fetchColumn();
   }
   $result->closeCursor();
-  $result = $db->exec($sql);
+  try {
+    $result = $db->exec($sql);
     $db->query("COMMIT");
+  } catch (Exception $e) {
+    die("0&No new posts"); //only command understood by the agent.
+  }
   if ($result !== 0 && count($id) !== 0)
       break;
   }
@@ -251,7 +259,9 @@ function my_push() {
     die("DB error, try again.");
   }
   foreach ($_POST as $post_id => $post){
-    if(!isset($post['data'], $post['exec_time'])) if(!is_numeric($post['exec_time']))
+    if(!isset($post['data'], $post['exec_time']))
+      die("Wrong parameters");
+    if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
     //Is it a stage one crawl.
     if(strpos($post_id, '_') === false){
@@ -272,6 +282,20 @@ function my_push() {
           ") on duplicate key UPDATE ".
           "data = ".$db->quote($post['data']).";";
       file_put_contents('raw/'.$row['fname'], gzinflate(substr(base64_decode($post['data']),10,-8)));
+      /*
+       * Insert into db
+       */
+      $mysqli = new mysqli("localhost", "root", "", "sincere");
+      if ($mysqli->connect_error) {
+        error_log('Connect Error ('.$mysqli->connect_errno.') '.$mysqli->connect_error, 0);
+      }
+      $GLOBALS['mysqli'] = &$mysqli;
+      try {
+        insertToDB(parseJsonString(gzinflate(substr(base64_decode($post['data']),10,-8))),$mysqli);
+        $mysqli->close();
+      } catch (Exception $e) {
+        error_log("Parses Error (".$row['id'].") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+      }
     } else {
       die("No post with id $post_id in db");
     }
@@ -403,6 +427,7 @@ function my_list() {
     "CONCAT(COUNT(CASE WHEN status = 'done' THEN 1 END),'/', COUNT(*)) ,".
     "CONCAT(COUNT(CASE WHEN status = 'pulled' THEN 1 END) , '/',COUNT(*))".
     "FROM page JOIN post WHERE post.page_id=page.id GROUP BY page.id;";
+  $sql_status = "SELECT * from crawling_status;";
   $query = $db->query($sql_status);
   print "<tbody>";
   while ($entry = $query->fetch(PDO::FETCH_ASSOC )) {
