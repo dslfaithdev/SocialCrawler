@@ -27,13 +27,13 @@ while(true) {
     $result = trim(curl_get(URL, array("action" => "pull","count" => 5)));
   } catch (Exception $e) { sleep(30); continue; }
   $posts = explode('&',$result);
-  print "\n+++ Pulled " .count($posts)." post(s) ".get_execution_time(1)."\n";
-  flush();ob_flush();
   if(count($posts) < 1 || empty($posts[0])) {
     print "Did not receive any new posts :/.\nWill take a nap and try again.\n"; ob_flush();flush();
     sleep(1800); //30 min.
     continue;
   }
+  print "\n+++ Pulled " .count($posts)." post(s) ".get_execution_time(1)."\n";
+  flush();ob_flush();
   foreach($posts as $currentPost) {
     //Test if the user is still there..
     if(connection_aborted()) {
@@ -289,8 +289,9 @@ function facebook_api_wrapper($facebook, $url) {
     } catch (Exception $e) {
       $t = time(1);
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
-      sleep(10);
       print "#"; flush(); ob_flush();
+      if (strpos($e->getMessage(), "An unknown error has occurred.") !== false)
+        return "$e-getMessage()";
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
         return "$e-getMessage()";
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
@@ -301,10 +302,10 @@ function facebook_api_wrapper($facebook, $url) {
         sleep(rand(60,240));
       if ($error > 10) {
         sleep(600);
+        $start_time += (time(1)-$t);
         throw $e;
-        # trigger_error($e->getMessage(), E_USER_WARNING);
-        # die($e->getMessage()."<br/>\n".get_execution_time()."<br/>\n<script> top.location = \"".selfURL()."\"</script>\n");
       }
+      sleep(10);
       $start_time += (time(1)-$t);
       $error++;
     }
