@@ -49,17 +49,16 @@ function parseJsonString($string, &$table = []) {
       continue;
     foreach($post[$type] as $tags)
       foreach($tags as $tag) {
-        if(!isset($tag['id'])){ var_dump($tag); die(0);}
           $table[$type][] = [
-          $tag['id'], $page_id, $post_id, $tag['offset'],
+          $tag['id'], $page_id, $post_id, 'null', $tag['offset'],
           $tag['length'], isSetOr($tag['type'],'null',true), my_escape($tag['name']) ];
       }
     unset($post[$type]);
   }
   // Handle with_tags
   if(isset($post['with_tags'])) {
-    foreach($post['with_tags'] as $with) {
-      $table['with_tags'][] = [ $page_id, $post_id, $with['id'] ];
+    foreach($post['with_tags']['data'] as $with) {
+      $table['with_tags'][] = [ $page_id, $post_id, isSetOr($with['id']) ];
     }
     unset($post['with_tags']);
   }
@@ -109,7 +108,7 @@ function parseJsonString($string, &$table = []) {
     $post['is_hidden'], $post['application'], $post['place']);
 
   //We don't care about this.
-  unset($post['width'], $post['expanded_width'], $post['height'], $post['expanded_height'], $post['actions']);
+  unset($post['width'], $post['expanded_width'], $post['height'], $post['expanded_height'], $post['actions'], $post['privacy']);
   if(!empty($post)) {
     $missed = json_encode($post);
     $missed = '"'.$msg_id.'":'.$missed.','.PHP_EOL;
@@ -148,12 +147,24 @@ function parseJsonString($string, &$table = []) {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
           $ids=explode('_',$c['id']);
+          $page_id = $ids[0]; $post_id = $ids[1]; $message_id = $ids[2];
           $table["comment"][] = array(
             array_pop($ids), array_pop($ids), array_pop($ids), isSetOr($user['id']),
             isSetOr($c['message'],'null',true),
             (isset($c['can_remove']) ? 1 : 0),
             isSetOr($c['created_time'],'null',true));
-            //"to_timestamp('".  pg_escape_string(isSetOr($c['created_time'])).  "', 'YYYY-MM-DD HH24:MI:SS')"));
+          //"to_timestamp('".  pg_escape_string(isSetOr($c['created_time'])).  "', 'YYYY-MM-DD HH24:MI:SS')"));
+
+          // Handle story_tags/message_tags
+          foreach(['story_tags', 'message_tags'] as $type) {
+            if(!isset($c[$type]))
+              continue;
+            foreach($c[$type] as $tag)
+              if(!isset($tag['id'])){ var_dump($c['message_tags']); die(0);}
+              $table[$type][] = [
+              $tag['id'], $page_id, $post_id, $message_id, $tag['offset'],
+              $tag['length'], isSetOr($tag['type'],'null',true), my_escape($tag['name']) ];
+          }
         }
       }
     }
@@ -173,7 +184,7 @@ function parseJsonString($string, &$table = []) {
             //$matches[1], $matches[2], $matches[3], $like['id'], "to_timestamp('".isSetOr($like['created_time'])."', 'YYYY-MM-DD HH24:MI:SS')"));
         }
     }
-    if(isset($d['ep_shares'],$d['ep_shares']['data'])) {
+    if(isset($d['ep_shares'], $d['ep_shares']['data'])) {
       foreach($d['ep_shares']['data'] as $share) {
         if(isset($share['from'])) {
           $user=$share['from'];

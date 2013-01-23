@@ -143,7 +143,7 @@ function checkout() {
     Updates and adds new posts to crawl to the db.
     returns number of rows added/modified or false on error
  */
-function update_posts($page, $posts){
+function update_posts($page, $exec_time, $posts){
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
@@ -157,13 +157,14 @@ function update_posts($page, $posts){
   $sql .= "UPDATE post SET status = 'done'".
       ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
       ", time_stamp = UNIX_TIMESTAMP()".
+      ", time =".$exec_time.
       " WHERE post_id = ".$page."; ";
   $sth = $db->query($sql);
   $page_id = $sth->fetchColumn();
   if( $page_id === false)
       return false;
-  $sql = "INSERT INTO post (page_id, time_stamp, status, seq, date, post_id)".
-      " VALUES ( $page_id, UNIX_TIMESTAMP(), 'new', :seq, :date, :id)".
+  $sql = "INSERT INTO post (page_id, time_stamp, status, seq, date, post_id, page_fb_id,post_fb_id)".
+      " VALUES ( $page_id, UNIX_TIMESTAMP(), 'new', :seq, :date, :id, :pageid, :postid)".
       " ON DUPLICATE KEY UPDATE page_id=$page_id, time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
   $sth = $db->prepare($sql);
   //$sth->execute(array(':seq'=> $seq,'date'=>$date,'id'=>$id))
@@ -172,7 +173,7 @@ function update_posts($page, $posts){
   $arr=explode("\n",trim($posts));
   reset($arr);
   while(list(,$date) = each($arr)){
-    $sth->execute(array(':seq'=> $seq++,'id'=>$date,'date'=>each($arr)[1]));
+    $sth->execute(array('seq'=> $seq++,'id'=>$date,'date'=>each($arr)[1], 'pageid' => strstr($date,'_',true), 'postid' => substr(strstr($date,'_'),1)));
   }
     $db->query("COMMIT");
   return $seq;
@@ -206,10 +207,10 @@ function pull_post($count=3) {
       #$sql .= "INSERT INTO pull_posts SELECT id FROM post FORCE INDEX (id_status_timestamp) WHERE ((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status='new') ORDER BY id LIMIT 500;";
       $sql .= "INSERT INTO pull_posts ".
           "SELECT id FROM ".
-          "(SELECT id, if(status='pulled', 0, time_stamp) as ts FROM ".
+          "(SELECT id, if(status='pulled', -1, time_stamp) as ts FROM ".
           "post FORCE INDEX (id_status_timestamp) WHERE ".
-          "((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status IN ('new', 'updated')) ".
-          "ORDER BY ts) AS tmp LIMIT 500;";
+          "((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 14400) OR status IN ('new', 'updated')) ".
+          "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.
       $sql .= "DELETE FROM pull_posts WHERE id = -1;";
       $db->query($sql);
   }
@@ -243,8 +244,8 @@ function pull_post($count=3) {
   if(count($id) == 0)
     die("0&No new posts");
   if($result == 0) {
-    header('HTTP/1.1 501 Not Implemented');
-    die("1");//"&Error updating DB\n$sql");
+#    header('HTTP/1.1 501 Not Implemented');
+    die("0&Error updating DB"); //\n$sql");
   }
   print implode('&',$id);
 
@@ -258,14 +259,14 @@ function my_push() {
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
-  foreach ($_POST as $post_id => $post){
+  foreach ($_POST as $post_id => $post) {
     if(!isset($post['data'], $post['exec_time']))
       die("Wrong parameters");
     if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
     //Is it a stage one crawl.
     if(strpos($post_id, '_') === false){
-        update_posts($post_id, gzinflate(substr(base64_decode($post['data']),10,-8)));
+        update_posts($post_id, $post['exec_time'], gzinflate(substr(base64_decode($post['data']),10,-8)));
         continue;
     }
     //Make sure that we already have the posts file in the DB.
@@ -277,39 +278,46 @@ function my_push() {
         ", time = ".$post['exec_time'].
         ", time_stamp = UNIX_TIMESTAMP()".
         " WHERE id = ".$row['id']."; ";
-      $sql .= "INSERT INTO post_data VALUES (".$row['id'].
-          ", data = ".$db->quote($post['data']).
-          ") on duplicate key UPDATE ".
-          "data = ".$db->quote($post['data']).";";
+#      $sql .= "INSERT INTO post_data VALUES (".$row['id'].
+#          ", data = ".$db->quote($post['data']).
+#          ") on duplicate key UPDATE ".
+#          "data = ".$db->quote($post['data']).";";
+      $result->closeCursor();
+      $query = $db->exec($sql);
+      if($query != 1)
+        die("DB error, try again.");
+
       file_put_contents('raw/'.$row['fname'], gzinflate(substr(base64_decode($post['data']),10,-8)));
       /*
        * Insert into db
        */
-      $mysqli = new mysqli("localhost", "root", "", "sincere");
+      $mysqli = new mysqli("localhost", "sincere", "1234", "sincere");
       if ($mysqli->connect_error) {
-        error_log('Connect Error ('.$mysqli->connect_errno.') '.$mysqli->connect_error, 0);
+        error_log('Connect Error F ('.$mysqli->connect_errno.') '.$mysqli->connect_error, 0);
+        continue;
       }
       $GLOBALS['mysqli'] = &$mysqli;
       try {
         insertToDB(parseJsonString(gzinflate(substr(base64_decode($post['data']),10,-8))),$mysqli);
         $mysqli->close();
       } catch (Exception $e) {
-        error_log("Parses Error (".$row['id'].") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+        error_log("Parse Error (".$row['id'].") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
       }
     } else {
       die("No post with id $post_id in db");
     }
-    $result->closeCursor();
-    $query = $db->exec($sql);
-    if($query != 1)
-      die("DB error, try again.");
   }
   print "Pushed to db.\n";  return;
 }
 
 function my_list() {
 ?>
-  <link rel="stylesheet" href="html/style.css" type="text/css" id="" media="print, projection, screen" />
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml"  xml:lang="en" lang="en">
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+        <title>Crawling status </title>
+  <link rel="stylesheet" href="html/style.css" type="text/css" id="style" media="print, projection, screen" />
   <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
 
   <script type="text/javascript" src="html/jquery.tablesorter.min.js"></script>
@@ -365,15 +373,19 @@ function my_list() {
         0 : {
           "Running"      : function(e, n, f, i) { return n > 0 && n < 100; },
           "Done" : function(e, n, f, i) { return n >= 99.9999; },
+          "Not done" : function(e, n, f, i) { return n <= 99.9999; },
           "New"     : function(e, n, f, i) { return n <= 0.001; }
         },
         2 : {
-          "last 20 min"      : function(e, n, f, i) { return serverTime-myTime(e) < 1200; },
-          "last 1 h" : function(e, n, f, i) { return serverTime-myTime(e) <= 3600; },
-          "last 12 h" : function(e, n, f, i) { return serverTime-myTime(e) <= 43200; },
-          "12 h - 24 h " : function(e, n, f, i) { return serverTime-myTime(e) >= 43200 && serverTime-myTime(e) <= 86400; },
-          "1 - 7 days" : function(e, n, f, i) { return serverTime-myTime(e) >= 86400 && serverTime-myTime(e) <= 604800; },
-          "7 - 14 days" : function(e, n, f, i) { return serverTime-myTime(e) >= 604800 && serverTime-myTime(e) <= 1209600; },
+          "last 20 min"   : function(e, n, f, i) { return serverTime-myTime(e) <= 1200; },
+          "last 1 h"      : function(e, n, f, i) { return serverTime-myTime(e) <= 3600; },
+          "last 12 h"     : function(e, n, f, i) { return serverTime-myTime(e) <= 43200; },
+          "last 24 h"     : function(e, n, f, i) { return serverTime-myTime(e) <= 86400; },
+          "last 7 days"   : function(e, n, f, i) { return serverTime-myTime(e) <= 604800; },
+          "last 14 days"  : function(e, n, f, i) { return serverTime-myTime(e) <= 1209600; },
+          "12 h - 24 h"   : function(e, n, f, i) { return serverTime-myTime(e) >= 43200 && serverTime-myTime(e) <= 86400; },
+          "1 - 7 days"    : function(e, n, f, i) { return serverTime-myTime(e) >= 86400 && serverTime-myTime(e) <= 604800; },
+          "7 - 14 days"   : function(e, n, f, i) { return serverTime-myTime(e) >= 604800 && serverTime-myTime(e) <= 1209600; },
           "> 14 days"     : function(e, n, f, i) { return serverTime-myTime(e) > 1209600; }
         },
         // Add these options to the select dropdown (regex example)
@@ -409,7 +421,8 @@ function my_list() {
     sortList: [[0,1],[2,0]]
   });
 }); </script>
-
+</head>
+<body>
   <?
   flush();
   try {
@@ -437,7 +450,7 @@ function my_list() {
     }
     print "</tr>\n";
   }
-  print "</tbody></table>";
+  print "</tbody></table></body></html>";
 }
 
 function stageone() {
@@ -466,8 +479,8 @@ function stageone() {
   $sql = "BEGIN;\n";
   $sql .= "INSERT INTO page (fb_id, name) VALUES ($id, $name);\n";
   $sql .= "INSERT INTO post (page_id, time_stamp, status, seq, post_id, page_fb_id)".
-    " VALUES ( LAST_INSERT_ID(), UNIX_TIMESTAMP(), 'new', 0, $id, $id".
-    ") ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated';\n";
+    " VALUES ( LAST_INSERT_ID(), 0, 'new', 0, $id, $id".
+    ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='updated';\n";
   $sql .= "COMMIT;";
   $count = $db->exec($sql);
   if($db->errorCode() == 0) {
