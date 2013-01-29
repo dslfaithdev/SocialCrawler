@@ -16,7 +16,7 @@ register_shutdown_function('fatalErrorHandler');
 # Save the output buffer to file AND print to screen.
 ob_implicit_flush(true);
 //ob_end_flush();
-$obfw = new OB_FileWriter('log/session.log');
+$obfw = new OB_FileWriter('log/session-'.getmypid().'.log');
 $obfw->start();
 
 while(true) {
@@ -49,7 +49,10 @@ while(true) {
         $data = fb_page_extract($currentPost, $facebook);
       else
         $data = crawl($currentPost, $facebook);
-    } catch(Exception $e) { continue; }
+    } catch(Exception $e) {
+      print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
+      continue;
+    }
     $out[$currentPost]['exec_time'] = microtime(true)-$start_time;
 #    file_put_contents('outputs/'.$currentPost, $data);
     $data = base64_encode(gzencode($data));
@@ -235,7 +238,11 @@ function renewAccessToken() {
   $url='https://graph.facebook.com/oauth/access_token?client_id='.APPID.
     '&client_secret='.APPSEC.
     '&grant_type=fb_exchange_token&fb_exchange_token='.$token['access_token'];
-  $ret = curl_get($url, array());
+  try {
+    $ret = curl_get($url, array());
+  } catch (Exception $e) {
+    die("Old access token (visit: https://developers.facebook.com/tools/explorer/".APPID." and generate a token)\n");
+  }
   if(strpos($ret, '"type":"OAuthException"') !== false)
     die("Old access token (visit: https://developers.facebook.com/tools/explorer/".APPID." and generate a token)\n");
   parse_str($ret, $token);
@@ -284,12 +291,16 @@ function facebook_api_wrapper($facebook, $url) {
   global $start_time;
   while (1) {
     try {
-      $data = $facebook->api($url, 'GET', array('limit' => 200));
+      $data = $facebook->api($url, 'GET', array('limit' => 200/($error+1)));
       return $data;
     } catch (Exception $e) {
       $t = time(1);
-      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
+      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "log/error.log" );
       print "#"; flush(); ob_flush();
+      /* Try to handle strange errors with huge amounts of comments */
+      if (strpos($e->getMessage(), "Operation timed out after") !== false)
+        /* It seems like it might be possible to retrieve if one first gets only the id. */
+        try { $facebook->api($url, 'GET', array('limit' => 200, 'feilds' => 'id')); } catch ( Exception $ex ) { unset($ex); }
       if (strpos($e->getMessage(), "An unknown error has occurred.") !== false)
         return "$e-getMessage()";
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
@@ -317,7 +328,7 @@ function fatalErrorHandler()
   # Getting last error
   $error = error_get_last();
 
-  error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/error.log" );
+  error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "log/error.log" );
   # Checking if last error is a fatal error
   if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR))
   {
@@ -370,10 +381,10 @@ function curl_post($url, array $post = NULL, array $options = array())
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
   if(($result = curl_exec($ch)) === false)
   {
-    trigger_error(curl_error($ch) . "\n $url");
+    throw new Exception(curl_error($ch) . "\n $url");
   }
   if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
-    trigger_error("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
+    throw new Exception("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
   }
   curl_close($ch);
   return $result;
@@ -400,10 +411,10 @@ function curl_get($url, array $get = NULL, array $options = array())
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
   if(($result = curl_exec($ch)) === false)
   {
-    trigger_error(curl_error($ch) . "\n $url");
+    throw new Exception(curl_error($ch) . "\n $url");
   }
   if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
-    trigger_error("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
+    throw new Exception("Curl error: ". curl_getinfo($ch, CURLINFO_HTTP_CODE) ."\n".$result . "\n");
   }
   curl_close($ch);
   return $result;
