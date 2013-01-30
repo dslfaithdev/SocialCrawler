@@ -16,7 +16,7 @@ register_shutdown_function('fatalErrorHandler');
 # Save the output buffer to file AND print to screen.
 ob_implicit_flush(true);
 //ob_end_flush();
-$obfw = new OB_FileWriter('log/session-'.getmypid().'.log');
+$obfw = new OB_FileWriter(dirname($_SERVER['SCRIPT_FILENAME']) .'/log/session-'.getmypid().'.log');
 $obfw->start();
 
 while(true) {
@@ -295,7 +295,7 @@ function facebook_api_wrapper($facebook, $url) {
       return $data;
     } catch (Exception $e) {
       $t = time(1);
-      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "log/error.log" );
+      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
       print "#"; flush(); ob_flush();
       /* Try to handle strange errors with huge amounts of comments */
       if (strpos($e->getMessage(), "Operation timed out after") !== false)
@@ -311,7 +311,7 @@ function facebook_api_wrapper($facebook, $url) {
         sleep(rand(60,240));
       if (strpos($e->getMessage(), "(#4)") !== false) //We got a error 4 "User request limit reached"
         sleep(rand(60,240));
-      if ($error > 10) {
+      if ($error > 16) {
         sleep(600);
         $start_time += (time(1)-$t);
         throw $e;
@@ -328,7 +328,7 @@ function fatalErrorHandler()
   # Getting last error
   $error = error_get_last();
 
-  error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "log/error.log" );
+  error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
   # Checking if last error is a fatal error
   if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR))
   {
