@@ -61,8 +61,10 @@ while(true) {
   }
   //Push changes
   for($i=0; $i<10; $i++) {
-  get_execution_time(1);
-    $curl_result = curl_post(URL.'?action=push', $out);
+    get_execution_time(1);
+    try {
+      $curl_result = curl_post(URL.'?action=push', $out);
+    } catch(Exception $e) { unset($e); get_execution_time(1); continue; }
     print "--- ".trim($curl_result) ." ".get_execution_time(1)."\n";
     flush();ob_flush();
     if($curl_result === "Pushed to db.\n")
@@ -155,6 +157,8 @@ function crawl($currentPost, $facebook) {
       #          fprintf($outFilePtr, "\n");
       $out .= sprintf("{\"ec_comments\":%s}\n\n", json_encode($ec_comments));
 
+      if(!isset($ec_comments['data'])) //Handle errors when the comment response is empty
+        return;
       foreach ($ec_comments['data'] as $ec_comment) {
         $ec_likes_page = 1;
         if(!isset($ec_comment['like_count']) || $ec_comment['like_count'] == 0) {
