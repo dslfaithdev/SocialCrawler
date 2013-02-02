@@ -158,7 +158,7 @@ function crawl($currentPost, $facebook) {
       $out .= sprintf("{\"ec_comments\":%s}\n\n", json_encode($ec_comments));
 
       if(!isset($ec_comments['data'])) //Handle errors when the comment response is empty
-        return;
+        throw new Exception("Broken comment at: ".$ec_comments_page . ":". $ec_comment);
       foreach ($ec_comments['data'] as $ec_comment) {
         $ec_likes_page = 1;
         if(!isset($ec_comment['like_count']) || $ec_comment['like_count'] == 0) {
