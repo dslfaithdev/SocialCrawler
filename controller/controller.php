@@ -1,67 +1,11 @@
 <?php
+#$GLOBALS['maintenance']=TRUE;
 /*
- * Assumes a (my)sql database like this:
---
--- Table structure for table `page`
---
-
-DROP TABLE IF EXISTS `page`;
-CREATE TABLE `page` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=MyISAM AUTO_INCREMENT=745 DEFAULT CHARSET=latin1;
-
---
--- Table structure for table `post`
---
-
-DROP TABLE IF EXISTS `post`;
-CREATE TABLE `post` (
-  `id` int(32) NOT NULL AUTO_INCREMENT,
-  `post_id` varchar(48) DEFAULT NULL,
-  `page_id` int(11) DEFAULT NULL,
-  `seq` int(11) DEFAULT NULL,
-  `date` varchar(13) DEFAULT NULL,
-  `data` longblob,
-  `status` varchar(40) DEFAULT NULL,
-  `time_stamp` int(11) DEFAULT NULL,
-  `who` int(10) unsigned DEFAULT NULL,
-  `time` float DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `post_id` (`post_id`),
-  KEY `page_id` (`page_id`),
-  KEY `IDX_FIELD2` (`post_id`),
-  KEY `status_time_stamp_id` (`status`,`time_stamp`,`id`),
-  KEY `status_post_id_time_stamp_id` (`status`,`post_id`,`time_stamp`,`id`),
-  KEY `id_status_timestamp` (`id`,`status`,`time_stamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=3472802 DEFAULT CHARSET=latin1;
-
---
--- Table structure for table `post_data`
---
-
-DROP TABLE IF EXISTS `post_data`;
-CREATE TABLE `post_data` (
-  `id` int(32) NOT NULL AUTO_INCREMENT,
-  `data` longblob,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3472802 DEFAULT CHARSET=latin1;
---
--- Table structure for table `pull_posts`
---
-
-DROP TABLE IF EXISTS `pull_posts`;
-CREATE TABLE `pull_posts` (
-  `id` int(32) NOT NULL DEFAULT '0'
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
- *
  * Don't forget to set the default values below.
  */
 define('PDO_dsn','mysql:dbname=crawling;unix_socket=/tmp/mysql.sock');
 define('PDO_username','root');
 define('PDO_password', '');
-#$GLOBALS['maintenance']=TRUE;
 
 include_once('parser.php');
 
@@ -92,6 +36,7 @@ default:
 
 #Checkout file, add to db.
 function checkout() {
+  die("this is depricated..");
   set_time_limit(0);
   $count = 0;
   try {
@@ -123,7 +68,7 @@ function checkout() {
     $insertId = $db->lastInsertId();
     $postsCount = 0;
 
-    $sql = 'INSERT IGNORE INTO post (page_id, time_stamp, status, seq, date, post_id)'.
+    $sql = 'INSERT IGNORE INTO post (page_fb_id, time_stamp, status, seq, date, post_fb_id)'.
       ' VALUES ( '.$insertId.', UNIX_TIMESTAMP(), \'new\', ?, ?, ?)';
     $sth = $db->prepare($sql);
     while(!feof($postsFilePtr)){
@@ -153,27 +98,25 @@ function update_posts($page, $exec_time, $posts){
   $db->query("START TRANSACTION");
 
   //Verify that the page exist in the page table.
-  $sql = "SELECT page_id from post where post_id=$page; ";
-  $sql .= "UPDATE post SET status = 'done'".
-      ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
-      ", time_stamp = UNIX_TIMESTAMP()".
-      ", time =".$exec_time.
-      " WHERE post_id = ".$page."; ";
-  $sth = $db->query($sql);
-  $page_id = $sth->fetchColumn();
-  if( $page_id === false)
-      return false;
-  $sql = "INSERT INTO post (page_id, time_stamp, status, seq, date, post_id, page_fb_id,post_fb_id)".
-      " VALUES ( $page_id, UNIX_TIMESTAMP(), 'new', :seq, :date, :id, :pageid, :postid)".
-      " ON DUPLICATE KEY UPDATE page_id=$page_id, time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
+  $sql = "INSERT INTO page (fb_id) VALUES (".$db->quote($page).") ON DUPLICATE KEY UPDATE `update`=NOW(); ";
+  $sql .= "INSERT INTO post (page_fb_id, post_fb_id, status, who, time_stamp, time) VALUES (".
+    $db->quote($page).",0,'done',".
+    "INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"])."), UNIX_TIMESTAMP(), ".  $db->quote($exec_time).
+    ") ON DUPLICATE KEY UPDATE status = 'done'".
+    ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
+    ", time_stamp = UNIX_TIMESTAMP()".
+    ", time =".$db->quote($exec_time).";";
+  $sth = $db->exec($sql);
+  $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id)".
+      " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
+      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
   $sth = $db->prepare($sql);
-  //$sth->execute(array(':seq'=> $seq,'date'=>$date,'id'=>$id))
   $seq=1;
   //A bit ugly but needed to split the post format (`date`\n`post`) into usable values
   $arr=explode("\n",trim($posts));
   reset($arr);
   while(list(,$date) = each($arr)){
-    $sth->execute(array('seq'=> $seq++,'id'=>$date,'date'=>each($arr)[1], 'pageid' => strstr($date,'_',true), 'postid' => substr(strstr($date,'_'),1)));
+    $sth->execute(array('seq'=> $seq++,'date'=>each($arr)[1], 'page_fb_id' => strstr($date,'_',true), 'post_fb_id' => substr(strstr($date,'_'),1)));
   }
     $db->query("COMMIT");
   return $seq;
@@ -193,30 +136,29 @@ function pull_post($count=3) {
   } catch (PDOException $e) {
     die("0&No new posts"); //only command understood by the agent.
   }
-//Make sure we are not already adding items to our helper table.
+  //Make sure we are not already adding items to our helper table.
   for ($i = 0; $i < 20; $i++) {
-      $result = $db->query("SELECT count(*) FROM pull_posts WHERE id = -1");
+      $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id = 0");
       if ($result->fetchColumn() == 0)
           break;
       sleep(10);
   }
-  $result = $db->query("SELECT count(*) FROM pull_posts WHERE id != -1");
+  $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id != 0");
   if ($result->fetchColumn() <= $count + 10) {
       // Add posts to our helper..
-      $sql = "set session binlog_format = 'MIXED'; INSERT INTO pull_posts VALUES (-1);";
-      #$sql .= "INSERT INTO pull_posts SELECT id FROM post FORCE INDEX (id_status_timestamp) WHERE ((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 4200) OR status='new') ORDER BY id LIMIT 500;";
-      $sql .= "INSERT INTO pull_posts ".
-          "SELECT id FROM ".
-          "(SELECT id, if(status='pulled', -1, time_stamp) as ts FROM ".
-          "post FORCE INDEX (id_status_timestamp) WHERE ".
-          "((status='pulled' AND UNIX_TIMESTAMP()-time_stamp > 14400) OR status IN ('new', 'updated')) ".
-          "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.
-      $sql .= "DELETE FROM pull_posts WHERE id = -1;";
+      $sql = "set session binlog_format = 'MIXED'; INSERT IGNORE INTO pull_posts VALUES (0,0);";
+      $sql .= "INSERT IGNORE INTO pull_posts ".
+          "SELECT page_fb_id, post_fb_id FROM ".
+          "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
+          "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
+          "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
+          "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.  86400 == 24h
+      $sql .= "DELETE FROM pull_posts WHERE page_fb_id = 0;";
       $db->query($sql);
   }
   for($i=0;$i<5;$i++) { //This should be a mysql procedure.
     $db->query("set session binlog_format = 'MIXED'; START TRANSACTION");
-  $sql = "SELECT id FROM pull_posts LIMIT ".intval($count);
+  $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
   $result = $db->query($sql);
   if($result->rowCount() == 0)
     die("0&No new posts");
@@ -227,8 +169,10 @@ function pull_post($count=3) {
       $sql .= "UPDATE post SET status = 'pulled', ".
         "time_stamp = UNIX_TIMESTAMP(), ".
         "who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]). ") ".
-        " WHERE id = '".$row['id']."'; DELETE FROM pull_posts WHERE id =  ".$row['id'].";";
-      $result = $db->query("SELECT post_id FROM post WHERE id = ".$row['id']);
+        " WHERE page_fb_id = '".$row['page_fb_id']."' AND post_fb_id = '".$row['post_fb_id']."'; ".
+        "DELETE FROM pull_posts WHERE post_fb_id =  ".$row['post_fb_id']." AND page_fb_id= ".$row['page_fb_id'].";";
+      $result = $db->query("SELECT concat(page_fb_id,'_',post_fb_id) FROM post WHERE page_fb_id = ".
+        $row['page_fb_id']." AND post_fb_id = ".$row['post_fb_id']);
       $id[]=$result->fetchColumn();
   }
   $result->closeCursor();
@@ -247,12 +191,16 @@ function pull_post($count=3) {
 #    header('HTTP/1.1 501 Not Implemented');
     die("0&Error updating DB"); //\n$sql");
   }
+  foreach ($id as &$value) {
+    if(substr(strstr($value,'_'),1) == '0')
+      $value = strstr($value,'_',true);
+  }
   print implode('&',$id);
 
 }
 
 function my_push() {
-#  file_put_contents('logFile.log', serialize($_POST));
+  #file_put_contents('logFile.log', serialize($_POST));
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
@@ -270,18 +218,17 @@ function my_push() {
         continue;
     }
     //Make sure that we already have the posts file in the DB.
-    $sql="SELECT post.id, CONCAT(page.name , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'_', post_id ,'.json')  AS fname FROM post JOIN page ON post.page_id=page.id WHERE post_id=".$db->quote($post_id);
+    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'-',page_fb_id,'_',post_fb_id,'.json')".
+      " AS fname FROM post WHERE page_fb_id=".$db->quote(strstr($post_id,'_',true)).
+      " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
         ", time = ".$post['exec_time'].
         ", time_stamp = UNIX_TIMESTAMP()".
-        " WHERE id = ".$row['id']."; ";
-#      $sql .= "INSERT INTO post_data VALUES (".$row['id'].
-#          ", data = ".$db->quote($post['data']).
-#          ") on duplicate key UPDATE ".
-#          "data = ".$db->quote($post['data']).";";
+        " WHERE page_fb_id = ".$row['page_fb_id']." AND ".
+        " post_fb_id= ".$row['post_fb_id']."; ";
       $result->closeCursor();
       $query = $db->exec($sql);
       if($query != 1)
@@ -376,7 +323,7 @@ function my_list() {
           "Not done" : function(e, n, f, i) { return n <= 99.9999; },
           "New"     : function(e, n, f, i) { return n <= 0.001; }
         },
-        2 : {
+        3 : {
           "last 20 min"   : function(e, n, f, i) { return serverTime-myTime(e) <= 1200; },
           "last 1 h"      : function(e, n, f, i) { return serverTime-myTime(e) <= 3600; },
           "last 12 h"     : function(e, n, f, i) { return serverTime-myTime(e) <= 43200; },
@@ -388,21 +335,10 @@ function my_list() {
           "7 - 14 days"   : function(e, n, f, i) { return serverTime-myTime(e) >= 604800 && serverTime-myTime(e) <= 1209600; },
           "> 14 days"     : function(e, n, f, i) { return serverTime-myTime(e) > 1209600; }
         },
-        // Add these options to the select dropdown (regex example)
-        4 : {
-          "A - D" : function(e, n, f, i) { return /^[A-D]/.test(e); },
-          "E - H" : function(e, n, f, i) { return /^[E-H]/.test(e); },
-          "I - L" : function(e, n, f, i) { return /^[I-L]/.test(e); },
-          "M - P" : function(e, n, f, i) { return /^[M-P]/.test(e); },
-          "Q - T" : function(e, n, f, i) { return /^[Q-T]/.test(e); },
-          "U - X" : function(e, n, f, i) { return /^[U-X]/.test(e); },
-          "Y - Z" : function(e, n, f, i) { return /^[Y-Z]/.test(e); }
-        },
-
         // Add these options to the select dropdown (numerical comparison example)
         // Note that only the normalized (n) value will contain numerical data
         // If you use the exact text, you'll need to parse it (parseFloat or parseInt)
-        3 : {
+        4 : {
           "< 1200s (20 min)"      : function(e, n, f, i) { return n < 1200; },
           "20 min - 1 h" : function(e, n, f, i) { return n >= 1200 && n <= 3600; },
           "1 h - 12 h" : function(e, n, f, i) { return n >= 3600 && n <= 43200; },
@@ -418,7 +354,7 @@ function my_list() {
      $('select:eq(1)').val($('select:eq(1)>*:eq(3)').val()).change();
      },
 
-    sortList: [[0,1],[2,0]]
+    sortList: [[0,1],[3,0]]
   });
 }); </script>
 </head>
@@ -433,14 +369,14 @@ function my_list() {
     die("DB error, try again.");
   }
   print "<table id='myTable' class='tablesorter'>";
-  print "<thead><tr><th data-placeholder=\"--\">Status (%)</th><th>Name</th><th>Last modification time</th><th data-placeholder=\"--\">Exec Time (s)</th><th data-placeholder=\"try /\d+\\//\">Status</th><th>Pulled</th></tr></thead>";
+  print "<thead><tr><th data-placeholder=\"--\">Status (%)</th><th>Id</th><th>Name</th><th>Last modification time</th><th data-placeholder=\"--\">Exec Time (s)</th><th data-placeholder=\"try /\d+\\//\">Status</th><th>Pulled</th></tr></thead>";
   $sql_status = "SELECT ".
     "ROUND(COUNT(CASE WHEN status = 'done' THEN 1 END)*100.0/COUNT(*),4), ".
     "name, FROM_UNIXTIME(MAX(time_stamp)), ROUND(SUM(time), 4),".
     "CONCAT(COUNT(CASE WHEN status = 'done' THEN 1 END),'/', COUNT(*)) ,".
     "CONCAT(COUNT(CASE WHEN status = 'pulled' THEN 1 END) , '/',COUNT(*))".
     "FROM page JOIN post WHERE post.page_id=page.id GROUP BY page.id;";
-  $sql_status = "SELECT * from crawling_status;";
+  $sql_status = "SELECT * from crawl_stat;";
   $query = $db->query($sql_status);
   print "<tbody>";
   while ($entry = $query->fetch(PDO::FETCH_ASSOC )) {
@@ -454,41 +390,75 @@ function my_list() {
 }
 
 function stageone() {
-  if(!isset($_GET['name'], $_GET['id'])) {
-    die('
-  <html><body>
+    print( "<html><body>" );
+  if(isset($_GET['id'])) {
+    try {
+      $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+      $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    } catch (PDOException $e) {
+      die("DB error, try again.");
+    }
+    $id=$_GET['id'];
+    if(isset($_GET['name'], $_GET['username'])) {
+      $name=$_GET['name'];
+      $user=$_GET['username'];
+    } else {
+      if(strpos($id,"facebook.com/" ) !== FALSE)
+        $id=substr($id, strpos($id,"facebook.com/" )+13);
+      /*
+       * Get the username and page name from facebook
+       */
+      try {
+        $handle = fopen("https://graph.facebook.com/".$id, "rb");
+        $contents = stream_get_contents($handle);
+        $json = json_decode($contents,true);
+        if(isset($json['username']))
+          $user=$json['username'];
+        else
+          $user="";
+        $name=$json['name'];
+        $id=$json['id'];
+      } catch (Exception $e) {
+        if(strpos($e->getMessage(),"400 Bad Request") !== FALSE) {
+          print "Problem finding meta-data, please fill the form below manually (with info from <a href=\"https://developers.facebook.com/tools/explorer/?method=GET&path=".$id."\" target=\"_blank\">this page</a>):";
+          die('
+            <form  action="'.$_SERVER['PHP_SELF'].'">
+            <input type="hidden" value="stageone" name="action"/>
+            Page id: <input type="text" name="id"/><br/>
+            Page name: <input type="text" name="name"/><br/>
+            Page username: <input type="text" name="name"/><br/>
+            <input type="submit" value="Submit">
+            </form>
+            </body></html>');
+        }
+        else
+          die($e->getMessage());
+      }
+    }
+    $sql = "BEGIN;\n";
+    $sql .= "INSERT INTO page (fb_id, name, username) VALUES (".$db->quote($id).", ".$db->quote($name).", ".$db->quote($user).") ".
+      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).";\n";
+    $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id)".
+      " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0".
+      ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';\n";
+    $sql .= "COMMIT;";
+    $count = $db->exec($sql);
+    if($db->errorCode() != 0) {
+      print "Errors occurred";
+      print_r($db->errorInfo());
+    }
+    else {
+      #print "<h1>System maintenance, please ignore all messages below</h1>";
+      print "<img src=\"http://graph.facebook.com/".$id."/picture/\">Added the page '".$name."' to the crawlDB<br/>";
+    }
+  }
+  die('
+    Please enter page id, page url or shortname to add a new page to the crawlDB<br/>
     <form  action="'.$_SERVER['PHP_SELF'].'">
-      Group name: <input type="text" name="name"/><br/>
-      Group id: <input type="text" name="id"/><br/>
-      <input type="hidden" value="stageone" name="action"/>
-      <input type="submit" value="Submit">
+    <input type="hidden" value="stageone" name="action"/>
+    <input type="text" name="id"/><br/>
+    <input type="submit" value="Submit">
     </form>
-  </body></html>');
-  }
-
-  try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-  } catch (PDOException $e) {
-    die("DB error, try again.");
-  }
-  $name = $db->quote($_GET['name']);
-  if(($id = intval($_GET['id'])) == 0)
-    die("Wrong parameters");
-
-  $sql = "BEGIN;\n";
-  $sql .= "INSERT INTO page (fb_id, name) VALUES ($id, $name);\n";
-  $sql .= "INSERT INTO post (page_id, time_stamp, status, seq, post_id, page_fb_id)".
-    " VALUES ( LAST_INSERT_ID(), 0, 'new', 0, $id, $id".
-    ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='updated';\n";
-  $sql .= "COMMIT;";
-  $count = $db->exec($sql);
-  if($db->errorCode() == 0) {
-    print "Added new group to crawl";
-    return;
-  }
-
-  print "Errors occurred";
-  print_r($db->errorInfo());
+    </body></html>');
 }
 ?>
