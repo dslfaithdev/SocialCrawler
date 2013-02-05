@@ -1,8 +1,21 @@
 <?php
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
-if(php_sapi_name() === 'cli') //We are running from cli, set exec-time to 0.
+require_once "./facebook-php/src/facebook.php";
+
+if(php_sapi_name() === 'cli') {
+  //We are running from cli, set exec-time to 0.
   set_time_limit(0);
+  if(defined('SESSION_PATH'))
+     session_save_path(SESSION_PATH);
+}
+else
+  set_time_limit(240);
+
+$facebook = new Facebook(array(
+    'appId' => APPID,
+    'secret' => APPSEC,
+));
 
 //Parse command line arguments as GET variables
 parse_str(implode('&', array_slice($argv, 1)), $_GET);
@@ -50,7 +63,8 @@ while(true) {
       else
         $data = crawl($currentPost, $facebook);
     } catch(Exception $e) {
-      print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
+      print "-- Interrupted @ ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
+      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
       continue;
     }
     $out[$currentPost]['exec_time'] = microtime(true)-$start_time;
@@ -81,6 +95,10 @@ function fb_page_extract($page, $facebook) {
   $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time';
   while(1) {
     $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
+    if(!isset($fb_data['data'])) {
+      print "_"; flush(); ob_flush();
+      continue;
+    }
     print "."; flush(); ob_flush();
     foreach($fb_data['data'] as $curr_feed)
       $out = sprintf("%s\n%s\n", $curr_feed['id'], $curr_feed['created_time']) . $out;
@@ -156,9 +174,11 @@ function crawl($currentPost, $facebook) {
       #            json_encode($ec_comments));
       #          fprintf($outFilePtr, "\n");
       $out .= sprintf("{\"ec_comments\":%s}\n\n", json_encode($ec_comments));
-
-      if(!isset($ec_comments['data'])) //Handle errors when the comment response is empty
+      //Handle errors when the comment response is empty
+      if(!isset($ec_comments['data'])) {
+        print "_"; flush(); ob_flush();
         throw new Exception("Broken comment at: ".$ec_comments_page . ":". $ec_comment);
+      }
       foreach ($ec_comments['data'] as $ec_comment) {
         $ec_likes_page = 1;
         if(!isset($ec_comment['like_count']) || $ec_comment['like_count'] == 0) {
