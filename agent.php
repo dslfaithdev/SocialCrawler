@@ -64,7 +64,7 @@ while(true) {
         $data = crawl($currentPost, $facebook);
     } catch(Exception $e) {
       print "-- Interrupted @ ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
-      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$url\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
+      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$currentPost\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
       continue;
     }
     $out[$currentPost]['exec_time'] = microtime(true)-$start_time;
