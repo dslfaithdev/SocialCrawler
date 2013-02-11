@@ -48,6 +48,8 @@ while(true) {
   print "\n+++ Pulled " .count($posts)." post(s) ".get_execution_time(1)."\n";
   flush();ob_flush();
   foreach($posts as $currentPost) {
+    if($currentPost == "0")
+      continue;
     //Test if the user is still there..
     if(connection_aborted()) {
       print "connection lost\n";
@@ -177,7 +179,7 @@ function crawl($currentPost, $facebook) {
       //Handle errors when the comment response is empty
       if(!isset($ec_comments['data'])) {
         print "_"; flush(); ob_flush();
-        throw new Exception("Broken comment at: ".$ec_comments_page . ":". $ec_comment);
+        throw new Exception("Broken comment at: ".$ec_comments_page . ":". var_export($ec_comment,true));
       }
       foreach ($ec_comments['data'] as $ec_comment) {
         $ec_likes_page = 1;
