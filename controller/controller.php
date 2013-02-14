@@ -106,10 +106,12 @@ function update_posts($page, $exec_time, $posts){
     ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
     ", time_stamp = UNIX_TIMESTAMP()".
     ", time =".$db->quote($exec_time).";";
+  //Set all "old" entries to seq -1 and status old.
+  $sql .= "UPDATE post SET seq=-1 WHERE page_fb_id=".$db->quote($page)." AND seq!=0;";
   $sth = $db->exec($sql);
   $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id)".
       " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
-      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
+      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status=IF(`status`='done','updated','new'), date=:date, seq=:seq;";
   $sth = $db->prepare($sql);
   $seq=1;
   //A bit ugly but needed to split the post format (`date`\n`post`) into usable values
@@ -218,7 +220,7 @@ function my_push() {
         continue;
     }
     //Make sure that we already have the posts file in the DB.
-    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'-',page_fb_id,'_',post_fb_id,'.json')".
+    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'-',page_fb_id,'_',post_fb_id,'.json')".
       " AS fname FROM post WHERE page_fb_id=".$db->quote(strstr($post_id,'_',true)).
       " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
     $result = $db->query($sql);
@@ -238,7 +240,7 @@ function my_push() {
       /*
        * Insert into db
        */
-      $mysqli = new mysqli("localhost", "sincere", "1234", "sincere");
+      $mysqli = new mysqli("localhost", "sincere", "1234", "crawled");
       if ($mysqli->connect_error) {
         error_log('Connect Error F ('.$mysqli->connect_errno.') '.$mysqli->connect_error, 0);
         continue;
@@ -390,7 +392,8 @@ function my_list() {
 }
 
 function stageone() {
-    print( "<html><body>" );
+  $token="";
+  print( "<html><body>" );
   if(isset($_GET['id'])) {
     try {
       $db = new PDO(PDO_dsn, PDO_username, PDO_password);
@@ -399,7 +402,7 @@ function stageone() {
       die("DB error, try again.");
     }
     $id=$_GET['id'];
-    if(isset($_GET['name'], $_GET['username'])) {
+    if(isset($_GET['name'], $_GET['username']) && !isset($_GET['token'])) {
       $name=$_GET['name'];
       $user=$_GET['username'];
     } else {
@@ -409,7 +412,9 @@ function stageone() {
        * Get the username and page name from facebook
        */
       try {
-        $handle = fopen("https://graph.facebook.com/".$id, "rb");
+        if(isset($_GET['token']))
+          $token="?access_token=".$_GET['token'];
+        $handle = fopen("https://graph.facebook.com/".$id.$token,"rb");
         $contents = stream_get_contents($handle);
         $json = json_decode($contents,true);
         if(isset($json['username']))
@@ -421,15 +426,22 @@ function stageone() {
       } catch (Exception $e) {
         if(strpos($e->getMessage(),"400 Bad Request") !== FALSE) {
           print "Problem finding meta-data, please fill the form below manually (with info from <a href=\"https://developers.facebook.com/tools/explorer/?method=GET&path=".$id."\" target=\"_blank\">this page</a>):";
-          die('
+          print '
             <form  action="'.$_SERVER['PHP_SELF'].'">
             <input type="hidden" value="stageone" name="action"/>
             Page id: <input type="text" name="id"/><br/>
             Page name: <input type="text" name="name"/><br/>
             Page username: <input type="text" name="name"/><br/>
             <input type="submit" value="Submit">
-            </form>
-            </body></html>');
+            </form>';
+          print '<br/>Or if your lazy get an <a href="https://developers.facebook.com/tools/explorer/">access_token</a> and add it below:
+            <form  action="'.$_SERVER['PHP_SELF'].'">
+            <input type="hidden" value="stageone" name="action"/>
+            Page id: <input type="text" name="id" value="'.$id.'"/><br/>
+            Access token: <input type="text" name="token"/><br/>
+            <input type="submit" value="Submit">
+            </form>';
+          die('</body></html>');
         }
         else
           die($e->getMessage());
@@ -437,10 +449,11 @@ function stageone() {
     }
     $sql = "BEGIN;\n";
     $sql .= "INSERT INTO page (fb_id, name, username) VALUES (".$db->quote($id).", ".$db->quote($name).", ".$db->quote($user).") ".
-      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).";\n";
+      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).", `update`=NOW();\n";
     $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id)".
       " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0".
       ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';\n";
+    $sql .= "INSERT INTO pull_posts VALUES (".$db->quote($id).",0);\n";
     $sql .= "COMMIT;";
     $count = $db->exec($sql);
     if($db->errorCode() != 0) {
