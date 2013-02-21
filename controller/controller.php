@@ -4,6 +4,7 @@
  * Don't forget to set the default values below.
  */
 define('PDO_dsn','mysql:dbname=crawling;unix_socket=/tmp/mysql.sock');
+#define('PDO_dsn','');
 define('PDO_username','root');
 define('PDO_password', '');
 
@@ -221,10 +222,15 @@ function my_push() {
     }
     //Make sure that we already have the posts file in the DB.
     $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'-',page_fb_id,'_',post_fb_id,'.json')".
-      " AS fname FROM post WHERE page_fb_id=".$db->quote(strstr($post_id,'_',true)).
+      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post_id,'_',true)).
       " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
+      if(!phar_put_contents($row['fname'],
+        realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'],
+        gzinflate(substr(base64_decode($post['data']),10,-8))))
+        continue; //We did not manage to write to our phar archive, try with next post.
+
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
         ", time = ".$post['exec_time'].
@@ -236,7 +242,7 @@ function my_push() {
       if($query != 1)
         die("DB error, try again.");
 
-      file_put_contents('raw/'.$row['fname'], gzinflate(substr(base64_decode($post['data']),10,-8)));
+      continue;
       /*
        * Insert into db
        */
@@ -473,5 +479,36 @@ function stageone() {
     <input type="submit" value="Submit">
     </form>
     </body></html>');
+}
+function phar_put_contents($fname, $archive, $data) {
+  //$archive =preg_replace('/[^[:alnum:]]/', '_',$archive);
+  if(file_exists($archive.'.tar') &&
+      filesize($archive.'.tar')+strlen($data) > 60*1024*1024) { //Archive is bigger than 60M
+    //Move archive to archive-EPOC.tar
+    rename($archive.'.tar', $archive.'-'.time().'.tar');
+      }
+  $i=0;
+  while (file_exists($archive.'.lock')) {
+      usleep(250);
+      if($i++>8)
+        return false;
+  }
+  for($i=0;$i<8;$i++) {
+    try{
+      touch($archive.'.lock');
+      $myPhar = new PharData($archive.'.tar',0);
+      $myPhar[$fname] = $data;
+      //$myPhar[$fname]->setCompressedGZ(); //We don't support file compression *yet*
+      $myPhar->stopBuffering();
+      unlink($archive.'.lock');
+      //unset($myPhar);
+      return true;
+    } catch (Exception $e) {
+      error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+      unset($e);
+      usleep(100);
+    }
+  }
+  return false;
 }
 ?>
