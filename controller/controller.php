@@ -4,7 +4,6 @@
  * Don't forget to set the default values below.
  */
 define('PDO_dsn','mysql:dbname=crawling;unix_socket=/tmp/mysql.sock');
-#define('PDO_dsn','');
 define('PDO_username','root');
 define('PDO_password', '');
 
@@ -481,27 +480,29 @@ function stageone() {
     </body></html>');
 }
 function phar_put_contents($fname, $archive, $data) {
-  //$archive =preg_replace('/[^[:alnum:]]/', '_',$archive);
-  if(file_exists($archive.'.tar') &&
-      filesize($archive.'.tar')+strlen($data) > 60*1024*1024) { //Archive is bigger than 60M
-    //Move archive to archive-EPOC.tar
-    rename($archive.'.tar', $archive.'-'.time().'.tar');
-      }
   $i=0;
   while (file_exists($archive.'.lock')) {
-      usleep(250);
-      if($i++>8)
+      usleep(125);
+      if($i++>16)
         return false;
   }
   for($i=0;$i<8;$i++) {
     try{
       touch($archive.'.lock');
+      if(file_exists($archive.'.tar') &&
+        filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
+          //Compress.
+          $p = new PharData($archive.'.tar',0);
+          $p->compress(Phar::GZ);
+          unlink($archive.'.tar');
+          //Move archive to archive-EPOC.tar
+          rename($archive.'.tar.gz', $archive.'-'.time().'.tar.gz');
+        }
       $myPhar = new PharData($archive.'.tar',0);
       $myPhar[$fname] = $data;
-      //$myPhar[$fname]->setCompressedGZ(); //We don't support file compression *yet*
+      //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
       $myPhar->stopBuffering();
       unlink($archive.'.lock');
-      //unset($myPhar);
       return true;
     } catch (Exception $e) {
       error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
