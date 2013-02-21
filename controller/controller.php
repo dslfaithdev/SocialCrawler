@@ -109,10 +109,12 @@ function update_posts($page, $exec_time, $posts){
     ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
     ", time_stamp = UNIX_TIMESTAMP()".
     ", time =".$db->quote($exec_time).";";
+  //Set all "old" entries to seq -1 and status old.
+  $sql .= "UPDATE post SET seq=-1 WHERE page_fb_id=".$db->quote($page)." AND seq!=0;";
   $sth = $db->exec($sql);
   $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id)".
-    " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
-    " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
+      " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
+      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status=IF(`status`='done','updated','new'), date=:date, seq=:seq;";
   $sth = $db->prepare($sql);
   $seq=1;
   //A bit ugly but needed to split the post format (`date`\n`post`) into usable values
@@ -230,11 +232,16 @@ function my_push() {
       continue;
     }
     //Make sure that we already have the posts file in the DB.
-    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'-',page_fb_id,'_',post_fb_id,'.json')".
-      " AS fname FROM post WHERE page_fb_id=".$db->quote(strstr($post_id,'_',true)).
+    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'-',page_fb_id,'_',post_fb_id,'.json')".
+      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post_id,'_',true)).
       " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
+      if(!phar_put_contents($row['fname'],
+        realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'],
+        gzinflate(substr(base64_decode($post['data']),10,-8))))
+        continue; //We did not manage to write to our phar archive, try with next post.
+
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
         ", time = ".$post['exec_time'].
@@ -246,11 +253,11 @@ function my_push() {
       if($query != 1)
         die("DB error, try again.");
 
-      file_put_contents('raw/'.$row['fname'], gzinflate(substr(base64_decode($post['data']),10,-8)));
+      continue;
       /*
        * Insert into db
        */
-      $mysqli = new mysqli("localhost", "sincere", "1234", "sincere");
+      $mysqli = new mysqli("localhost", "sincere", "1234", "crawled");
       if ($mysqli->connect_error) {
         error_log('Connect Error F ('.$mysqli->connect_errno.') '.$mysqli->connect_error, 0);
         continue;
@@ -302,6 +309,7 @@ function my_list() {
 }
 
 function stageone() {
+  $token="";
   print( "<html><body>" );
   if(isset($_GET['id'])) {
     try {
@@ -311,7 +319,7 @@ function stageone() {
       die("DB error, try again.");
     }
     $id=$_GET['id'];
-    if(isset($_GET['name'], $_GET['username'])) {
+    if(isset($_GET['name'], $_GET['username']) && !isset($_GET['token'])) {
       $name=$_GET['name'];
       $user=$_GET['username'];
     } else {
@@ -321,7 +329,9 @@ function stageone() {
        * Get the username and page name from facebook
        */
       try {
-        $handle = fopen("https://graph.facebook.com/".$id, "rb");
+        if(isset($_GET['token']))
+          $token="?access_token=".$_GET['token'];
+        $handle = fopen("https://graph.facebook.com/".$id.$token,"rb");
         $contents = stream_get_contents($handle);
         $json = json_decode($contents,true);
         if(isset($json['username']))
@@ -333,15 +343,22 @@ function stageone() {
       } catch (Exception $e) {
         if(strpos($e->getMessage(),"400 Bad Request") !== FALSE) {
           print "Problem finding meta-data, please fill the form below manually (with info from <a href=\"https://developers.facebook.com/tools/explorer/?method=GET&path=".$id."\" target=\"_blank\">this page</a>):";
-          die('
+          print '
             <form  action="'.$_SERVER['PHP_SELF'].'">
             <input type="hidden" value="stageone" name="action"/>
             Page id: <input type="text" name="id"/><br/>
             Page name: <input type="text" name="name"/><br/>
             Page username: <input type="text" name="name"/><br/>
             <input type="submit" value="Submit">
-            </form>
-            </body></html>');
+            </form>';
+          print '<br/>Or if your lazy get an <a href="https://developers.facebook.com/tools/explorer/">access_token</a> and add it below:
+            <form  action="'.$_SERVER['PHP_SELF'].'">
+            <input type="hidden" value="stageone" name="action"/>
+            Page id: <input type="text" name="id" value="'.$id.'"/><br/>
+            Access token: <input type="text" name="token"/><br/>
+            <input type="submit" value="Submit">
+            </form>';
+          die('</body></html>');
         }
         else
           die($e->getMessage());
@@ -349,10 +366,11 @@ function stageone() {
     }
     $sql = "BEGIN;\n";
     $sql .= "INSERT INTO page (fb_id, name, username) VALUES (".$db->quote($id).", ".$db->quote($name).", ".$db->quote($user).") ".
-      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).";\n";
+      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).", `update`=NOW();\n";
     $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id)".
       " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0".
       ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';\n";
+    $sql .= "INSERT INTO pull_posts VALUES (".$db->quote($id).",0);\n";
     $sql .= "COMMIT;";
     $count = $db->exec($sql);
     if($db->errorCode() != 0) {
@@ -371,5 +389,38 @@ function stageone() {
     <input type="submit" value="Submit">
     </form>
     </body></html>');
+}
+function phar_put_contents($fname, $archive, $data) {
+  $i=0;
+  while (file_exists($archive.'.lock')) {
+      usleep(125);
+      if($i++>16)
+        return false;
+  }
+  for($i=0;$i<8;$i++) {
+    try{
+      touch($archive.'.lock');
+      if(file_exists($archive.'.tar') &&
+        filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
+          //Compress.
+          $p = new PharData($archive.'.tar',0);
+          $p->compress(Phar::GZ);
+          unlink($archive.'.tar');
+          //Move archive to archive-EPOC.tar
+          rename($archive.'.tar.gz', $archive.'-'.time().'.tar.gz');
+        }
+      $myPhar = new PharData($archive.'.tar',0);
+      $myPhar[$fname] = $data;
+      //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
+      $myPhar->stopBuffering();
+      unlink($archive.'.lock');
+      return true;
+    } catch (Exception $e) {
+      error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+      unset($e);
+      usleep(100);
+    }
+  }
+  return false;
 }
 ?>
