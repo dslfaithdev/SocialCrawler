@@ -1,4 +1,5 @@
 <?php
+define('VERSION', 1.0);
 #$GLOBALS['maintenance']=TRUE;
 /*
  * Don't forget to set the default values below.
@@ -9,8 +10,10 @@ define('PDO_password', '');
 
 include_once('parser.php');
 
+ini_set('memory_limit', '512M');
 error_reporting(E_ALL);
-ini_set("display_errors", 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 ini_set('error_log','logFile.log');
 $action='';
 if(isset($_GET['action']))
@@ -108,8 +111,8 @@ function update_posts($page, $exec_time, $posts){
     ", time =".$db->quote($exec_time).";";
   $sth = $db->exec($sql);
   $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id)".
-      " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
-      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
+    " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
+    " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status='updated', date=:date, seq=:seq;";
   $sth = $db->prepare($sql);
   $seq=1;
   //A bit ugly but needed to split the post format (`date`\n`post`) into usable values
@@ -118,13 +121,17 @@ function update_posts($page, $exec_time, $posts){
   while(list(,$date) = each($arr)){
     $sth->execute(array('seq'=> $seq++,'date'=>each($arr)[1], 'page_fb_id' => strstr($date,'_',true), 'post_fb_id' => substr(strstr($date,'_'),1)));
   }
-    $db->query("COMMIT");
+  $db->query("COMMIT");
   return $seq;
 }
 
 function pull_post($count=3) {
+  $ret=array('version' => VERSION,
+    'status' => 'ok',
+    'posts' => array());
+  header('Content-type: application/json');
   if(isset($GLOBALS['maintenance']))
-    die("0&maintenance try later");
+    die(json_encode(array('status'=>'maintenance')+$ret));
   if(isset($_GET['count']))
     $count = intval($_GET['count']);
   if($count < 1)
@@ -134,88 +141,93 @@ function pull_post($count=3) {
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
     $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
   } catch (PDOException $e) {
-    die("0&No new posts"); //only command understood by the agent.
+    die(json_encode(array('status'=>'db error')+$ret));
   }
   //Make sure we are not already adding items to our helper table.
   for ($i = 0; $i < 20; $i++) {
-      $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id = 0");
-      if ($result->fetchColumn() == 0)
-          break;
-      sleep(10);
+    $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id = 0");
+    if ($result->fetchColumn() == 0)
+      break;
+    sleep(10);
   }
   $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id != 0");
   if ($result->fetchColumn() <= $count + 10) {
-      // Add posts to our helper..
-      $sql = "set session binlog_format = 'MIXED'; INSERT IGNORE INTO pull_posts VALUES (0,0);";
-      $sql .= "INSERT IGNORE INTO pull_posts ".
-          "SELECT page_fb_id, post_fb_id FROM ".
-          "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
-          "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
-          "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
-          "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.  86400 == 24h
-      $sql .= "DELETE FROM pull_posts WHERE page_fb_id = 0;";
-      $db->query($sql);
+    // Add posts to our helper..
+    $sql = "set session binlog_format = 'MIXED'; INSERT IGNORE INTO pull_posts VALUES (0,0);";
+    $sql .= "INSERT IGNORE INTO pull_posts ".
+      "SELECT page_fb_id, post_fb_id FROM ".
+      "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
+      "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
+      "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
+      "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.  86400 == 24h
+    $sql .= "DELETE FROM pull_posts WHERE page_fb_id = 0;";
+    $db->query($sql);
   }
   for($i=0;$i<5;$i++) { //This should be a mysql procedure.
     $db->query("set session binlog_format = 'MIXED'; START TRANSACTION");
-  $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
-  $result = $db->query($sql);
-  if($result->rowCount() == 0)
-    die("0&No new posts");
-  $rows=$result->fetchAll();
-  $id = array();
-  $sql ="";
-  foreach ($rows as $row){
+    $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
+    $result = $db->query($sql);
+    if($result->rowCount() == 0)
+      die(json_encode(array('status'=>'no new posts')+$ret));
+    $rows=$result->fetchAll();
+    $posts = array();
+    $sql ="";
+    foreach ($rows as $row){
       $sql .= "UPDATE post SET status = 'pulled', ".
         "time_stamp = UNIX_TIMESTAMP(), ".
         "who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]). ") ".
         " WHERE page_fb_id = '".$row['page_fb_id']."' AND post_fb_id = '".$row['post_fb_id']."'; ".
         "DELETE FROM pull_posts WHERE post_fb_id =  ".$row['post_fb_id']." AND page_fb_id= ".$row['page_fb_id'].";";
-      $result = $db->query("SELECT concat(page_fb_id,'_',post_fb_id) FROM post WHERE page_fb_id = ".
-        $row['page_fb_id']." AND post_fb_id = ".$row['post_fb_id']);
-      $id[]=$result->fetchColumn();
-  }
-  $result->closeCursor();
-  try {
-    $result = $db->exec($sql);
-    $db->query("COMMIT");
-  } catch (Exception $e) {
-    die("0&No new posts"); //only command understood by the agent.
-  }
-  if ($result !== 0 && count($id) !== 0)
+      if($row['post_fb_id'] == 0) { //It's a page
+        $posts[] = array(
+          'id' => $row['page_fb_id'],
+          'type' => 'page',
+          'data' => array('feed'=>array(), 'seq'=>0)
+        );
+      } else {
+        $posts[] = array('id' => $row['page_fb_id'].'_'.$row['post_fb_id'], 'type' => 'post');
+      }
+    }
+    $result->closeCursor();
+    try {
+      $result = $db->exec($sql);
+      $db->query("ROLLBACK");
+      //$db->query("COMMIT");
+    } catch (Exception $e) {
+      die(json_encode(array('status'=>'db error')+$ret));
+    }
+    if ($result !== 0 && count($posts) !== 0)
       break;
   }
-  if(count($id) == 0)
-    die("0&No new posts");
-  if($result == 0) {
-#    header('HTTP/1.1 501 Not Implemented');
-    die("0&Error updating DB"); //\n$sql");
-  }
-  foreach ($id as &$value) {
-    if(substr(strstr($value,'_'),1) == '0')
-      $value = strstr($value,'_',true);
-  }
-  print implode('&',$id);
-
+  if(count($posts) == 0)
+    die(json_encode(array('status'=>'no new posts')+$ret));
+  if($result == 0)
+    die(json_encode(array('status'=>'db error')+$ret));
+  die(json_encode(array('posts'=>$posts)+$ret));
 }
 
 function my_push() {
-  #file_put_contents('logFile.log', serialize($_POST));
+  $fp = fopen('php://input', 'r');
+  $rawData = gzinflate(substr(stream_get_contents($fp),10,-8));
+  $postedJson = json_decode($rawData,true);
+  if($postedJson['version'] < VERSION)
+    die("Old version, please upgrade");
+
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
-  foreach ($_POST as $post_id => $post) {
-    if(!isset($post['data'], $post['exec_time']))
+  foreach ($postedJson['d'] as $post_id => $post) {
+    if(!isset($post['data'], $post['exec_time'], $post['id'], $post['data']))
       die("Wrong parameters");
     if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
     //Is it a stage one crawl.
     if(strpos($post_id, '_') === false){
-        update_posts($post_id, $post['exec_time'], gzinflate(substr(base64_decode($post['data']),10,-8)));
-        continue;
+      update_posts($post_id, $post['exec_time'], gzinflate(substr(base64_decode($post['data']),10,-8)));
+      continue;
     }
     //Make sure that we already have the posts file in the DB.
     $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , SUBSTR(date,1,13),'-',page_fb_id,'_',post_fb_id,'.json')".
@@ -258,108 +270,8 @@ function my_push() {
 }
 
 function my_list() {
-?>
-<!DOCTYPE HTML>
-<html xmlns="http://www.w3.org/1999/xhtml"  xml:lang="en" lang="en">
-  <head>
-    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
-        <title>Crawling status </title>
-  <link rel="stylesheet" href="html/style.css" type="text/css" id="style" media="print, projection, screen" />
-  <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
-
-  <script type="text/javascript" src="html/jquery.tablesorter.min.js"></script>
-  <script type="text/javascript" src="html/jquery.tablesorter.widgets.min.js"></script>
-  <script type="text/javascript">
-  function myTime(timestamp) {
-  //function parses mysql datetime string and returns javascript Date object
-  //input has to be in this format: 2007-06-05 15:26:02
-  var regex=/^([0-9]{2,4})-([0-1][0-9])-([0-3][0-9]) (?:([0-2][0-9]):([0-5][0-9]):([0-5][0-9]))?$/;
-  var parts=timestamp.replace(regex,"$1 $2 $3 $4 $5 $6").split(' ');
-  return new Date(Date.UTC(parts[0],parts[1]-1,parts[2],parts[3],parts[4],parts[5])).getTime()/1000;
-  }
-  var serverTime = <? echo time(); ?>;
-  </script>
-<script type="text/javascript" id="js">$(document).ready(function() {
-  // call the tablesorter plugin
-  $("table").tablesorter({
-    widgets: ["zebra", "filter"],
-
-    widgetOptions : {
-
-      // css class applied to the table row containing the filters & the inputs within that row
-      filter_cssFilter : 'tablesorter-filter',
-
-      // If there are child rows in the table (rows with class name from "cssChildRow" option)
-      // and this option is true and a match is found anywhere in the child row, then it will make that row
-      // visible; default is false
-      filter_childRows : false,
-
-      // Set this option to true to use the filter to find text from the start of the column
-      // So typing in "a" will find "albert" but not "frank", both have a's; default is false
-      filter_startsWith : false,
-
-      // Set this option to false to make the searches case sensitive
-      filter_ignoreCase : true,
-
-      // Delay in milliseconds before the filter widget starts searching; This option prevents searching for
-      // every character while typing and should make searching large tables faster.
-      filter_searchDelay : 300,
-
-      // Add select box to 4th column (zero-based index)
-      // each option has an associated function that returns a boolean
-      // function variables:
-      // e = exact text from cell
-      // n = normalized value returned by the column parser
-      // f = search filter input value
-      // i = column index
-      filter_functions : {
-
-        // Add select menu to this column
-        // set the column value to true, and/or add "filter-select" class name to header
-        // 0 : true,
-        0 : {
-          "Running"      : function(e, n, f, i) { return n > 0 && n < 100; },
-          "Done" : function(e, n, f, i) { return n >= 99.9999; },
-          "Not done" : function(e, n, f, i) { return n <= 99.9999; },
-          "New"     : function(e, n, f, i) { return n <= 0.001; }
-        },
-        3 : {
-          "last 20 min"   : function(e, n, f, i) { return serverTime-myTime(e) <= 1200; },
-          "last 1 h"      : function(e, n, f, i) { return serverTime-myTime(e) <= 3600; },
-          "last 12 h"     : function(e, n, f, i) { return serverTime-myTime(e) <= 43200; },
-          "last 24 h"     : function(e, n, f, i) { return serverTime-myTime(e) <= 86400; },
-          "last 7 days"   : function(e, n, f, i) { return serverTime-myTime(e) <= 604800; },
-          "last 14 days"  : function(e, n, f, i) { return serverTime-myTime(e) <= 1209600; },
-          "12 h - 24 h"   : function(e, n, f, i) { return serverTime-myTime(e) >= 43200 && serverTime-myTime(e) <= 86400; },
-          "1 - 7 days"    : function(e, n, f, i) { return serverTime-myTime(e) >= 86400 && serverTime-myTime(e) <= 604800; },
-          "7 - 14 days"   : function(e, n, f, i) { return serverTime-myTime(e) >= 604800 && serverTime-myTime(e) <= 1209600; },
-          "> 14 days"     : function(e, n, f, i) { return serverTime-myTime(e) > 1209600; }
-        },
-        // Add these options to the select dropdown (numerical comparison example)
-        // Note that only the normalized (n) value will contain numerical data
-        // If you use the exact text, you'll need to parse it (parseFloat or parseInt)
-        4 : {
-          "< 1200s (20 min)"      : function(e, n, f, i) { return n < 1200; },
-          "20 min - 1 h" : function(e, n, f, i) { return n >= 1200 && n <= 3600; },
-          "1 h - 12 h" : function(e, n, f, i) { return n >= 3600 && n <= 43200; },
-          "12 h - 24 h " : function(e, n, f, i) { return n >= 43200 && n <= 86400; },
-          "1 - 7 days" : function(e, n, f, i) { return n >= 86400 && n <= 604800; },
-          "7 - 14 days" : function(e, n, f, i) { return n >= 604800 && n <= 1209600; },
-          "> 14 days"     : function(e, n, f, i) { return n > 1209600; }
-        }
-      }
-
-    },
-   initialized : function(table){
-     $('select:eq(1)').val($('select:eq(1)>*:eq(3)').val()).change();
-     },
-
-    sortList: [[0,1],[3,0]]
-  });
-}); </script>
-</head>
-<body>
-  <?
+  define("MY_LIST",true);
+  require('html/list.html.php');
   flush();
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
@@ -390,7 +302,7 @@ function my_list() {
 }
 
 function stageone() {
-    print( "<html><body>" );
+  print( "<html><body>" );
   if(isset($_GET['id'])) {
     try {
       $db = new PDO(PDO_dsn, PDO_username, PDO_password);
@@ -448,7 +360,6 @@ function stageone() {
       print_r($db->errorInfo());
     }
     else {
-      #print "<h1>System maintenance, please ignore all messages below</h1>";
       print "<img src=\"http://graph.facebook.com/".$id."/picture/\">Added the page '".$name."' to the crawlDB<br/>";
     }
   }

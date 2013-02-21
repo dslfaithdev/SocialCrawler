@@ -1,4 +1,5 @@
 <?php
+define("VERSION", 1.0);
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
 require_once "./facebook-php/src/facebook.php";
@@ -37,14 +38,20 @@ while(true) {
   #Fetch new id's
   get_execution_time(true);
   try {
-    $result = trim(curl_get(URL, array("action" => "pull","count" => 5)));
+    $result = json_decode(curl_get(URL, array("action" => "pull","count" => 1,"version" => VERSION)),true);
+    print_r($result);
+    if($result === NULL)
+      throw new Exception("Json decode error.");
   } catch (Exception $e) { sleep(30); continue; }
-  $posts = explode('&',$result);
-  if(count($posts) < 1 || empty($posts[0])) {
+  //Verify that we have the latest version.
+  if($result['version'] > VERSION%10)
+    die("You have an old version, please upgrade.");
+  if($result['status'] != "ok" || count($result['posts']) == 0) {
     print "Did not receive any new posts :/.\nWill take a nap and try again.\n"; ob_flush();flush();
     sleep(1800); //30 min.
     continue;
   }
+  $posts=$result['posts'];
   print "\n+++ Pulled " .count($posts)." post(s) ".get_execution_time(1)."\n";
   flush();ob_flush();
   foreach($posts as $currentPost) {
@@ -58,28 +65,36 @@ while(true) {
     //Verify the access token's lifetime
     if(($token['expire_time']-(2*60*60)) < time()) #Renew accessToken
       renewAccessToken();
+    $out[$currentPost['id']]['status'] = "done";
+    $out[$currentPost['id']]['type'] = $currentPost['type'];
+    $data=array();
     $start_time = microtime(true);
     try {
-      if(strpos($currentPost, '_') === false)
-        $data = fb_page_extract($currentPost, $facebook);
+      if($currentPost['type'] == "page") {
+        if(isset($currentPost['data']))
+          $data = $currentPost['data'];
+        $data = fb_page_extract($currentPost['id'], $facebook, $data);
+      }
       else
-        $data = crawl($currentPost, $facebook);
+        $data = crawl($currentPost['id'], $facebook);
     } catch(Exception $e) {
       print "-- Interrupted @ ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$currentPost\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
-      continue;
+      $out[$currentPost['id']]['status'] = "error";
     }
-    $out[$currentPost]['exec_time'] = microtime(true)-$start_time;
+    $out[$currentPost['id']]['exec_time'] = microtime(true)-$start_time;
 #    file_put_contents('outputs/'.$currentPost, $data);
-    $data = base64_encode(gzencode($data));
-    $out[$currentPost]['data'] = $data;
-#    file_put_contents('outputs/'.$currentPost.'gz', $data);
+    $out[$currentPost['id']]['data'] = $data;
   }
   //Push changes
   for($i=0; $i<10; $i++) {
     get_execution_time(1);
     try {
-      $curl_result = curl_post(URL.'?action=push', $out);
+      print json_encode(array('version'=> VERSION, 'd'=>$out));
+      $curl_result = curl_post(URL.'?action=push', NULL,
+        array(CURLOPT_HTTPHEADER => array('Content-Type: application/json'),
+          CURLOPT_POSTFIELDS => gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
+        ));
     } catch(Exception $e) { unset($e); get_execution_time(1); continue; }
     print "--- ".trim($curl_result) ." ".get_execution_time(1)."\n";
     flush();ob_flush();
@@ -90,11 +105,15 @@ while(true) {
   //break;
 }
 
-function fb_page_extract($page, $facebook) {
+function fb_page_extract($page, $facebook, array &$out = array()) {
+  $out=$out+array('feed'=>array(), 'seq'=>0);
   get_execution_time(true);
   print  $page; flush();ob_flush();
-  $out="";
   $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time';
+  if(isset($out['until']))
+    $page.='&until='.$out['until'];
+  else
+    $out['until']=time();
   while(1) {
     $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
     if(!isset($fb_data['data'])) {
@@ -102,8 +121,13 @@ function fb_page_extract($page, $facebook) {
       continue;
     }
     print "."; flush(); ob_flush();
-    foreach($fb_data['data'] as $curr_feed)
-      $out = sprintf("%s\n%s\n", $curr_feed['id'], $curr_feed['created_time']) . $out;
+    foreach($fb_data['data'] as $curr_feed) {
+      $out['feed'][$out['seq']++] = ['id' => $curr_feed['id'],
+        'time' => $curr_feed['created_time']];
+      //Store the oldest created_time as epoc in until (so we can resume from that stage).
+      if($out['until'] > strtotime($curr_feed['created_time'])-1)
+        $out['until'] = strtotime($curr_feed['created_time'])-1;
+    }
     if (!isset($fb_data['paging'],$fb_data['paging']['next']))
       break;
     $page = $fb_data['paging']['next'];
@@ -118,36 +142,24 @@ function crawl($currentPost, $facebook) {
   flush();ob_flush();
   $curr_feed = facebook_api_wrapper($facebook, '/' . $currentPost);
   print "."; flush(); ob_flush();
-
-  #      fprintf($outFilePtr, "%s\n", json_encode($curr_feed));
-  #      fprintf($outFilePtr, "\n");
   $out = sprintf("%s\n\n", json_encode($curr_feed));
   // el_likes handling --
   $ep_likes_page = 1;
   $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes");
   print "L"; flush(); ob_flush();
-  while($ep_likes_page)
-  {
-    if ($ep_likes)
-    {
-      #          fprintf($outFilePtr, "{\"ep_likes\":%s}\n",
-      #            json_encode($ep_likes));
-      #          fprintf($outFilePtr, "\n");
+  while($ep_likes_page) {
+    if ($ep_likes) {
       $out .= sprintf("{\"ep_likes\":%s}\n\n", json_encode($ep_likes));
-
       $ep_likes_page = 0;
       if (isset($ep_likes['paging']) && isset($ep_likes['paging']['next']))
         $ep_likes_page = $ep_likes['paging']['next'];
-      if ($ep_likes_page)
-      {
+      if ($ep_likes_page) {
         $ep_likes = facebook_api_wrapper($facebook, substr($ep_likes_page, 26));
         print "L"; flush(); ob_flush();
       }
     }
     else
-    {
       $ep_likes_page = NULL;
-    }
   } // done with el_likes!
 
   // ep_shares
@@ -172,9 +184,6 @@ function crawl($currentPost, $facebook) {
   print "C"; flush(); ob_flush();
   while($ec_comments_page) {
     if ($ec_comments) {
-      #          fprintf($outFilePtr, "{\"ec_comments\":%s}\n",
-      #            json_encode($ec_comments));
-      #          fprintf($outFilePtr, "\n");
       $out .= sprintf("{\"ec_comments\":%s}\n\n", json_encode($ec_comments));
       //Handle errors when the comment response is empty
       if(!isset($ec_comments['data'])) {
@@ -184,18 +193,13 @@ function crawl($currentPost, $facebook) {
       foreach ($ec_comments['data'] as $ec_comment) {
         $ec_likes_page = 1;
         if(!isset($ec_comment['like_count']) || $ec_comment['like_count'] == 0) {
-          #              fprintf($outFilePtr, "{\"ec_likes\":{\"data\":[]}}\n\n");
           $out .= "{\"ec_likes\":{\"data\":[]}}\n\n";
           continue;
         }
-
         $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
         print "l"; flush(); ob_flush();
         while($ec_likes_page) {
           if ($ec_likes) {
-            #                fprintf($outFilePtr, "{\"ec_likes\":%s}\n",
-            #                  json_encode($ec_likes));
-            #                fprintf($outFilePtr, "\n");
             $out .= sprintf("{\"ec_likes\":%s}\n\n", json_encode($ec_likes));
             $ec_likes_page = 0;
             if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))
@@ -205,12 +209,10 @@ function crawl($currentPost, $facebook) {
               print "l"; flush(); ob_flush();
             }
           }
-          else {
+          else
             $ec_likes_page = NULL;
-          }
         } // ec_likes_page
       } // for each ec_comment
-
       $ec_comments_page = 0;
       if (isset($ec_comments['paging']) && isset($ec_comments['paging']['next']))
         $ec_comments_page = $ec_comments['paging']['next'];
@@ -219,9 +221,8 @@ function crawl($currentPost, $facebook) {
         print "C"; flush(); ob_flush();
       }
     }
-    else {
+    else
       $ec_comments_page = NULL;
-    }
   }
 
   print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
@@ -229,35 +230,6 @@ function crawl($currentPost, $facebook) {
   return $out;
 }
 
-  /*
-    if ((($postsCount+$offset) % (100*$chunk)) == 0)
-    {
-      print " ".get_execution_time(true)."<br/>\nEven hundred count, extend Access_Token"; ob_flush();
-      $facebook->api('/oauth/access_token', 'GET',
-        array(
-          'client_id' => $facebook->getAppId(),
-          'client_secret' => $facebook->getApiSecret(),
-          'grant_type' => 'fb_exchange_token',
-          'fb_exchange_token' => $facebook->getAccessToken()
-        )
-      );
-    }
-    print " " . get_execution_time(true) . "<br/>\n" . $id_file. "--" . "All Posts DONE! ";
-    print microtime(true) . "<br/>\n";
-    if (!($lastCountFilePtr = fopen($lastCountFName, "w"))) {
-      print "error opening the file: $lastCountFName for writing";
-      return;
-    }
-    else {
-      fprintf($lastCountFilePtr, "%d", $postsCount);
-      fclose($lastCountFilePtr);
-    }
-  }
-  sleep(60);
-  }*/
-?>
-
-<?php
 function renewAccessToken() {
   GLOBAL $facebook, $token;
   #Renew the accessToken
@@ -283,12 +255,10 @@ function renewAccessToken() {
  * get execution time in seconds at current point of call in seconds
  * @return float Execution time at this point of call
  */
-function get_execution_time($delta = false)
-{
+function get_execution_time($delta = false) {
   static $microtime_start = null;
   static $microtime_delta = null;
-  if($microtime_start === null)
-  {
+  if($microtime_start === null) {
     $microtime_start = microtime(true);
     $microtime_delta = $microtime_start;
     return 0.0;
@@ -304,9 +274,8 @@ function get_execution_time($delta = false)
 
 function postTime() {
   static $postTime = null;
-  if($postTime === null) {
+  if($postTime === null)
     $postTime = microtime(true);
-  }
   $delta = microtime(true) - $postTime;
   $postTime = microtime(true);
   return $delta;
@@ -349,15 +318,12 @@ function facebook_api_wrapper($facebook, $url) {
   }
 }
 
-function fatalErrorHandler()
-{
+function fatalErrorHandler() {
   # Getting last error
   $error = error_get_last();
-
   error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
   # Checking if last error is a fatal error
-  if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR))
-  {
+  if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR)) {
     # Here we handle the error, displaying HTML, logging, ...
     echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
     echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".selfURL()."\"</script>\n";
@@ -365,22 +331,13 @@ function fatalErrorHandler()
   }
 }
 
-function selfURL()
-{
-  //isset($_SERVER["HTTPS"]) ? 'https' : 'http';
-  //$protocol = strleft(strtolower($_SERVER["SERVER_PROTOCOL"]), "/").$s;
+function selfURL() {
   if(!isset($_SERVER['SERVER_NAME'], $_SERVER['REQUEST_URI']))
     return $_SERVER['PHP_SELF'];
   return (isset($_SERVER["HTTPS"]) ? 'https' : 'http') ."://".$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI'];
 }
 
-#print microtime(true) . "<br/>\n";
-#print "Script ended gracefully.\n\nALL OK!\n";
-
 $obfw->end();
-?>
-
-<?php
 
 /**
  * Send a POST requst using cURL
@@ -389,8 +346,7 @@ $obfw->end();
  * @param array $options for cURL
  * @return string
  */
-function curl_post($url, array $post = NULL, array $options = array())
-{
+function curl_post($url, array $post = NULL, array $options = array()) {
   $defaults = array(
     CURLOPT_POST => 1,
     CURLOPT_HEADER => 0,
@@ -398,15 +354,15 @@ function curl_post($url, array $post = NULL, array $options = array())
     CURLOPT_FRESH_CONNECT => 1,
     CURLOPT_RETURNTRANSFER => 1,
     CURLOPT_FORBID_REUSE => 1,
-    CURLOPT_TIMEOUT => 600,
-    CURLOPT_POSTFIELDS => http_build_query($post)
+    CURLOPT_TIMEOUT => 600
   );
+  if(!is_null($post))
+    $defaults['CURLOPT_POSTFIELDS'] = http_build_query($post);
 
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
-  if(($result = curl_exec($ch)) === false)
-  {
+  if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
   if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
@@ -423,8 +379,7 @@ function curl_post($url, array $post = NULL, array $options = array())
  * @param array $options for cURL
  * @return string
  */
-function curl_get($url, array $get = NULL, array $options = array())
-{
+function curl_get($url, array $get = NULL, array $options = array()) {
   $defaults = array(
     CURLOPT_URL => $url. (strpos($url, '?') === FALSE ? '?' : ''). http_build_query($get),
     CURLOPT_HEADER => 0,
@@ -435,8 +390,7 @@ function curl_get($url, array $get = NULL, array $options = array())
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
-  if(($result = curl_exec($ch)) === false)
-  {
+  if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
   if(curl_getinfo($ch, CURLINFO_HTTP_CODE) != 200) {
