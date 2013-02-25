@@ -481,35 +481,38 @@ function stageone() {
 }
 function phar_put_contents($fname, $archive, $data) {
   $i=0;
-  while (file_exists($archive.'.lock')) {
-      usleep(125);
-      if($i++>16)
-        return false;
-  }
-  for($i=0;$i<8;$i++) {
-    try{
-      touch($archive.'.lock');
-      if(file_exists($archive.'.tar') &&
-        filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
-          //Compress.
-          $p = new PharData($archive.'.tar',0);
-          $p->compress(Phar::GZ);
-          unlink($archive.'.tar');
-          //Move archive to archive-EPOC.tar
-          rename($archive.'.tar.gz', $archive.'-'.time().'.tar.gz');
-        }
-      $myPhar = new PharData($archive.'.tar',0);
-      $myPhar[$fname] = $data;
-      //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
-      $myPhar->stopBuffering();
-      unlink($archive.'.lock');
-      return true;
-    } catch (Exception $e) {
-      error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
-      unset($e);
-      usleep(100);
+  do {
+    $fp = @fopen($archive.'.lock', 'w');
+    if(!$fp) {
+      usleep(25);
+      continue;
     }
-  }
+    if(flock($fp, LOCK_EX)) {
+      try{
+        if(file_exists($archive.'.tar') &&
+          filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
+            $newName = $archive.'-'.time();
+            //Move archive to archive-EPOC.tar
+            rename($archive.'.tar', $newName.'.tar');
+            //Compress.
+            $p = new PharData($newName.'.tar',0);
+            $p->compress(Phar::GZ);
+            //unlink($archive.'.tar');
+          }
+        $myPhar = new PharData($archive.'.tar',0);
+        $myPhar[$fname] = $data;
+        //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
+        $myPhar->stopBuffering();
+        flock($fp, LOCK_UN) && @fclose($fp);
+        @unlink($archive.'.lock');
+        return true;
+      } catch (Exception $e) {
+        error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+        unset($e);
+        @flock($fp, LOCK_UN) && @fclose($fp);
+      }
+    }
+  } while ($i++<8);
   return false;
 }
 ?>
