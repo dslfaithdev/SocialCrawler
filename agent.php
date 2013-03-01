@@ -190,24 +190,22 @@ function crawl($currentPost, $facebook) {
         }
 
         $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
+        $old_url="";
         print "l"; flush(); ob_flush();
-        while($ec_likes_page) {
-          if ($ec_likes) {
-            #                fprintf($outFilePtr, "{\"ec_likes\":%s}\n",
-            #                  json_encode($ec_likes));
-            #                fprintf($outFilePtr, "\n");
+        while($ec_likes) {
             $out .= sprintf("{\"ec_likes\":%s}\n\n", json_encode($ec_likes));
-            $ec_likes_page = 0;
-            if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next']))
+            if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next'])) {
               $ec_likes_page = $ec_likes['paging']['next'];
-            if ($ec_likes_page) {
+              if($ec_likes_page == $old_url) {
+                print "-"; flush(); ob_flush();
+                break;
+              }
+              $old_url = $ec_likes_page;
               $ec_likes = facebook_api_wrapper($facebook, substr($ec_likes_page, 26));
               print "l"; flush(); ob_flush();
             }
-          }
-          else {
-            $ec_likes_page = NULL;
-          }
+            else
+              break;
         } // ec_likes_page
       } // for each ec_comment
 
