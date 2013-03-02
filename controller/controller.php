@@ -254,9 +254,9 @@ function my_push() {
       continue;
     }
     //Make sure that we already have the posts file in the DB.
-    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'-',page_fb_id,'_',post_fb_id,'.json')".
-      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post['id'],'_',true)).
-      " AND post_fb_id=".$db->quote(substr(strstr($post['id'],'_'),1));
+   $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'_',page_fb_id,'_',post_fb_id,'.json')".
+      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post_id,'_',true)).
+      " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
       if(!phar_put_contents($row['fname'],
@@ -415,35 +415,47 @@ function stageone() {
 }
 function phar_put_contents($fname, $archive, $data) {
   $i=0;
-  while (file_exists($archive.'.lock')) {
-      usleep(125);
-      if($i++>16)
-        return false;
-  }
-  for($i=0;$i<8;$i++) {
-    try{
-      touch($archive.'.lock');
-      if(file_exists($archive.'.tar') &&
-        filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
-          //Compress.
-          $p = new PharData($archive.'.tar',0);
-          $p->compress(Phar::GZ);
-          unlink($archive.'.tar');
-          //Move archive to archive-EPOC.tar
-          rename($archive.'.tar.gz', $archive.'-'.time().'.tar.gz');
-        }
-      $myPhar = new PharData($archive.'.tar',0);
-      $myPhar[$fname] = $data;
-      //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
-      $myPhar->stopBuffering();
-      unlink($archive.'.lock');
-      return true;
-    } catch (Exception $e) {
-      error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
-      unset($e);
-      usleep(100);
+  do {
+    $fp = @fopen($archive.'.lock', 'w');
+    if(!$fp) {
+      usleep(25);
+      continue;
     }
-  }
+    if(flock($fp, LOCK_EX)) {
+      try{
+        if(file_exists($archive.'.tar') &&
+          filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
+            $newName = $archive.'-'.time();
+            //Move archive to archive-EPOC.tar
+            rename($archive.'.tar', $newName.'.tar');
+            //Compress.
+            $p = new PharData($newName.'.tar',0);
+            $p->compress(Phar::GZ);
+            //unlink($archive.'.tar');
+          }
+        file_put_contents('/tmp/'.$fname, $data);
+        $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /tmp ".$fname;
+        exec($tarCmd." 2>&1", $result, $status);
+        if($status!=0)
+          throw new Exception($tarCmd . implode($result, "\n"));
+        @unlink('/tmp/'.$fname);
+        /*
+         *$myPhar = new PharData($archive.'.tar',0);
+         *$myPhar[$fname] = $data;
+         * //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
+         *$myPhar->stopBuffering();
+         */
+        flock($fp, LOCK_UN) && @fclose($fp);
+        @unlink($archive.'.lock');
+        return true;
+      } catch (Exception $e) {
+        if(strpos($e->getMessage(),'unlink') === false)
+          error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+        unset($e);
+        try {@flock($fp, LOCK_UN) && @fclose($fp);} catch (Exception $e) {}
+      }
+    }
+  } while ($i++<8);
   return false;
 }
 ?>
