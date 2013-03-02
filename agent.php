@@ -39,7 +39,6 @@ while(true) {
   get_execution_time(true);
   try {
     $result = json_decode(curl_get(URL, array("action" => "pull","count" => 1,"version" => VERSION)),true);
-    print_r($result);
     if($result === NULL)
       throw new Exception("Json decode error.");
   } catch (Exception $e) { sleep(30); continue; }
@@ -65,6 +64,7 @@ while(true) {
     //Verify the access token's lifetime
     if(($token['expire_time']-(2*60*60)) < time()) #Renew accessToken
       renewAccessToken();
+    $out[$currentPost['id']]['id'] = $currentPost['id'];
     $out[$currentPost['id']]['status'] = "done";
     $out[$currentPost['id']]['type'] = $currentPost['type'];
     $data=array();
@@ -79,7 +79,7 @@ while(true) {
         $data = crawl($currentPost['id'], $facebook);
     } catch(Exception $e) {
       print "-- Interrupted @ ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
-      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";$currentPost\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
+      error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";".$currentPost['id']."\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
       $out[$currentPost['id']]['status'] = "error";
     }
     $out[$currentPost['id']]['exec_time'] = microtime(true)-$start_time;
@@ -90,10 +90,9 @@ while(true) {
   for($i=0; $i<10; $i++) {
     get_execution_time(1);
     try {
-      print json_encode(array('version'=> VERSION, 'd'=>$out));
       $curl_result = curl_post(URL.'?action=push', NULL,
-        array(CURLOPT_HTTPHEADER => array('Content-Type: application/json'),
-          CURLOPT_POSTFIELDS => gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
+        array(CURLOPT_HTTPHEADER => array('Content-type: application/json'),
+          CURLOPT_POSTFIELDS => json_encode(array('version'=> VERSION, 'd'=>$out))
         ));
     } catch(Exception $e) { unset($e); get_execution_time(1); continue; }
     print "--- ".trim($curl_result) ." ".get_execution_time(1)."\n";
@@ -106,15 +105,23 @@ while(true) {
 }
 
 function fb_page_extract($page, $facebook, array &$out = array()) {
-  $out=$out+array('feed'=>array(), 'seq'=>0);
+  $stime=time();
   get_execution_time(true);
   print  $page; flush();ob_flush();
   $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time';
-  if(isset($out['until']))
+  if(isset($out['until']) && $out['until'] !=0)
     $page.='&until='.$out['until'];
-  else
-    $out['until']=time();
-  while(1) {
+  $out=$out+array('seq'=>0,  'done'=>false, 'until'=>time(), 'feed'=>array());
+  //Get only new ones..
+  if(isset($out['since'])) {
+    $start=true;
+    $end=$out['since'];
+    unset($out['since']); //We don't need this anymore..
+  }
+
+  if($out['until'] == 0 || is_null($out['until']))
+    $out['until'] = time();
+  while(time(true)-$stime < 3600*1) { //Just run for 6h and then commit.
     $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
     if(!isset($fb_data['data'])) {
       print "_"; flush(); ob_flush();
@@ -122,15 +129,19 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
     }
     print "."; flush(); ob_flush();
     foreach($fb_data['data'] as $curr_feed) {
-      $out['feed'][$out['seq']++] = ['id' => $curr_feed['id'],
-        'time' => $curr_feed['created_time']];
+      $out['feed'][$out['seq']++] = [substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time'])];
       //Store the oldest created_time as epoc in until (so we can resume from that stage).
       if($out['until'] > strtotime($curr_feed['created_time'])-1)
         $out['until'] = strtotime($curr_feed['created_time'])-1;
     }
-    if (!isset($fb_data['paging'],$fb_data['paging']['next']))
+#    $out['seq'] = $out['seq']+count($fb_data['data']);
+    if (!isset($fb_data['paging'],$fb_data['paging']['next'])) {
+      $out['done'] = true;
       break;
+    }
     $page = $fb_data['paging']['next'];
+    if(isset($start) && $end>$out['until'])
+      break;
   }
   print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
   return $out;

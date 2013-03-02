@@ -91,37 +91,42 @@ function checkout() {
     Updates and adds new posts to crawl to the db.
     returns number of rows added/modified or false on error
  */
-function update_posts($page, $exec_time, $posts){
+function update_page($id, $exec_time, $data){
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
   } catch (PDOException $e) {
+    error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
     return false;
   }
   $db->query("START TRANSACTION");
 
   //Verify that the page exist in the page table.
-  $sql = "INSERT INTO page (fb_id) VALUES (".$db->quote($page).") ON DUPLICATE KEY UPDATE `update`=NOW(); ";
+  $sql = "INSERT INTO page (fb_id) VALUES (".$db->quote($id).") ON DUPLICATE KEY UPDATE `update`=NOW(); ";
   $sql .= "INSERT INTO post (page_fb_id, post_fb_id, status, who, time_stamp, time) VALUES (".
-    $db->quote($page).",0,'done',".
+    $db->quote($id).",0,'done',".
     "INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"])."), UNIX_TIMESTAMP(), ".  $db->quote($exec_time).
     ") ON DUPLICATE KEY UPDATE status = 'done'".
     ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
     ", time_stamp = UNIX_TIMESTAMP()".
+    ", date=FROM_UNIXTIME(".$db->quote($data['until']).") ".
+    ", seq=".$db->quote($data['seq']).
     ", time =".$db->quote($exec_time).";";
   //Set all "old" entries to seq -1 and status old.
-  $sql .= "UPDATE post SET seq=-1 WHERE page_fb_id=".$db->quote($page)." AND seq!=0;";
+  $sql .= "UPDATE post SET seq=-1 WHERE page_fb_id=".$db->quote($id)." AND seq!=0;";
   $sth = $db->exec($sql);
   $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id)".
-      " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, :date, :page_fb_id, :post_fb_id)".
-      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status=IF(`status`='done','updated','new'), date=:date, seq=:seq;";
+      " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, FROM_UNIXTIME(:date), :page_fb_id, :post_fb_id)".
+      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status=IF(`status`='done','updated','new'), date=FROM_UNIXTIME(:date), seq=:seq;";
   $sth = $db->prepare($sql);
-  $seq=1;
-  //A bit ugly but needed to split the post format (`date`\n`post`) into usable values
-  $arr=explode("\n",trim($posts));
-  reset($arr);
-  while(list(,$date) = each($arr)){
-    $sth->execute(array('seq'=> $seq++,'date'=>each($arr)[1], 'page_fb_id' => strstr($date,'_',true), 'post_fb_id' => substr(strstr($date,'_'),1)));
+  foreach($data['feed'] as $seq => $post)
+    $sth->execute([ 'seq'=>$seq, 'date'=>$post[1], 'page_fb_id'=>$id, 'post_fb_id'=>$post[0] ]);
+
+  if(!$data['done']) { //For some reason did the agent not finish, continue where it left of.
+    $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);";
+    $sql.="UPDATE post SET date=NULL, seq=".$db->quote($data['seq']).
+      "WHERE page_fb_id=". $db->quote($id) ." AND post_fb_id=0;";
+    $db->exec($sql);
   }
   $db->query("COMMIT");
   return $seq;
@@ -143,7 +148,7 @@ function pull_post($count=3) {
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
     $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
   } catch (PDOException $e) {
-    die(json_encode(array('status'=>'db error')+$ret));
+    die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
   }
   //Make sure we are not already adding items to our helper table.
   for ($i = 0; $i < 20; $i++) {
@@ -166,12 +171,13 @@ function pull_post($count=3) {
     $db->query($sql);
   }
   for($i=0;$i<5;$i++) { //This should be a mysql procedure.
-    $db->query("set session binlog_format = 'MIXED'; START TRANSACTION");
+    $db->exec("set session binlog_format = 'MIXED'; START TRANSACTION");
     $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
     $result = $db->query($sql);
     if($result->rowCount() == 0)
       die(json_encode(array('status'=>'no new posts')+$ret));
     $rows=$result->fetchAll();
+    $result->closeCursor();
     $posts = array();
     $sql ="";
     foreach ($rows as $row){
@@ -181,11 +187,20 @@ function pull_post($count=3) {
         " WHERE page_fb_id = '".$row['page_fb_id']."' AND post_fb_id = '".$row['post_fb_id']."'; ".
         "DELETE FROM pull_posts WHERE post_fb_id =  ".$row['post_fb_id']." AND page_fb_id= ".$row['page_fb_id'].";";
       if($row['post_fb_id'] == 0) { //It's a page
-        $posts[] = array(
-          'id' => $row['page_fb_id'],
-          'type' => 'page',
-          'data' => array('feed'=>array(), 'seq'=>0)
-        );
+        $s="SELECT seq, UNIX_TIMESTAMP(date) AS until FROM post ".
+        " WHERE page_fb_id=".$row['page_fb_id']." AND post_fb_id=0";//.$row['post_fb_id'];
+        $result = $db->query($s);
+        $page=$result->fetchAll();
+        foreach($page as $p) {
+          if(is_null($p['until'])) {
+            $since=$db->query("SELECT MAX(UNIX_TIMESTAMP(date)) FROM post WHERE page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
+            $posts[] = [ 'id' => $row['page_fb_id'], 'type' => 'page',
+              'data' => [ 'seq'=>$p['seq'], 'since'=>$since ] ];
+          }
+          else
+            $posts[] = [ 'id' => $row['page_fb_id'], 'type' => 'page',
+            'data' => [ 'seq'=>$p['seq'], 'until'=>$p['until'] ] ];
+        }
       } else {
         $posts[] = array('id' => $row['page_fb_id'].'_'.$row['post_fb_id'], 'type' => 'post');
       }
@@ -193,10 +208,9 @@ function pull_post($count=3) {
     $result->closeCursor();
     try {
       $result = $db->exec($sql);
-      $db->query("ROLLBACK");
-      //$db->query("COMMIT");
+      $db->query("COMMIT");
     } catch (Exception $e) {
-      die(json_encode(array('status'=>'db error')+$ret));
+      die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
     }
     if ($result !== 0 && count($posts) !== 0)
       break;
@@ -204,13 +218,15 @@ function pull_post($count=3) {
   if(count($posts) == 0)
     die(json_encode(array('status'=>'no new posts')+$ret));
   if($result == 0)
-    die(json_encode(array('status'=>'db error')+$ret));
+    die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
+    //die(json_encode(array('status'=>'db error')+$ret));
+  #print_r($ret);
+
   die(json_encode(array('posts'=>$posts)+$ret));
 }
 
 function my_push() {
-  $fp = fopen('php://input', 'r');
-  $rawData = gzinflate(substr(stream_get_contents($fp),10,-8));
+  $rawData = file_get_contents('php://input','r');
   $postedJson = json_decode($rawData,true);
   if($postedJson['version'] < VERSION)
     die("Old version, please upgrade");
@@ -221,25 +237,31 @@ function my_push() {
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
-  foreach ($postedJson['d'] as $post_id => $post) {
-    if(!isset($post['data'], $post['exec_time'], $post['id'], $post['data']))
+  foreach ($postedJson['d'] as $post) {
+    if(!isset($post['data'], $post['exec_time'], $post['id'], $post['status'], $post['type']))
       die("Wrong parameters");
     if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
-    //Is it a stage one crawl.
-    if(strpos($post_id, '_') === false){
-      update_posts($post_id, $post['exec_time'], gzinflate(substr(base64_decode($post['data']),10,-8)));
+    if($post['status'] != "done") { //For some reason the agent did not complete insert to pull_posts.
+      $sql="INSERT INTO pull_posts VALUES (".$db->quote(strstr($post['id'],'_',true)).",".
+        (($post['type']== "page") ? "0" :  $db->quote(substr(strstr($post['id'],'_'),1))).")";
+      $result = $db->exec($sql);
+      continue;
+    }
+//    print "working with ". $post['id'] .PHP_EOL; flush();
+    if($post['type'] == "page") { //Is it a stage one crawl.
+      update_page($post['id'], $post['exec_time'], $post['data']);
       continue;
     }
     //Make sure that we already have the posts file in the DB.
     $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , SUBSTR(CONCAT('00000000',seq),-8,8) , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'-',page_fb_id,'_',post_fb_id,'.json')".
-      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post_id,'_',true)).
-      " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
+      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post['id'],'_',true)).
+      " AND post_fb_id=".$db->quote(substr(strstr($post['id'],'_'),1));
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
       if(!phar_put_contents($row['fname'],
         realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'],
-        gzinflate(substr(base64_decode($post['data']),10,-8))))
+        $post['data']))
         continue; //We did not manage to write to our phar archive, try with next post.
 
       $sql = "UPDATE post SET status = 'done'".
@@ -264,7 +286,7 @@ function my_push() {
       }
       $GLOBALS['mysqli'] = &$mysqli;
       try {
-        insertToDB(parseJsonString(gzinflate(substr(base64_decode($post['data']),10,-8))),$mysqli);
+        insertToDB(parseJsonString($post['data'],$mysqli));
         $mysqli->close();
       } catch (Exception $e) {
         error_log("Parse Error (".$row['id'].") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
@@ -367,8 +389,8 @@ function stageone() {
     $sql = "BEGIN;\n";
     $sql .= "INSERT INTO page (fb_id, name, username) VALUES (".$db->quote($id).", ".$db->quote($name).", ".$db->quote($user).") ".
       "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).", `update`=NOW();\n";
-    $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id)".
-      " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0".
+    $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id, date)".
+      " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0, 0".
       ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';\n";
     $sql .= "INSERT INTO pull_posts VALUES (".$db->quote($id).",0);\n";
     $sql .= "COMMIT;";
@@ -378,6 +400,7 @@ function stageone() {
       print_r($db->errorInfo());
     }
     else {
+      #print "<h1>System maintenance, please ignore all messages below</h1>";
       print "<img src=\"http://graph.facebook.com/".$id."/picture/\">Added the page '".$name."' to the crawlDB<br/>";
     }
   }
