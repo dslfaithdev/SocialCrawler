@@ -38,7 +38,7 @@ while(true) {
   #Fetch new id's
   get_execution_time(true);
   try {
-    $result = json_decode(curl_get(URL, array("action" => "pull","count" => 1,"version" => VERSION)),true);
+    $result = json_decode(curl_get(URL, array("action" => "pull","count" => 5,"version" => VERSION)),true);
     if($result === NULL)
       throw new Exception("Json decode error.");
   } catch (Exception $e) { sleep(30); continue; }
@@ -92,7 +92,7 @@ while(true) {
     try {
       $curl_result = curl_post(URL.'?action=push', NULL,
         array(CURLOPT_HTTPHEADER => array('Content-type: application/json'),
-          CURLOPT_POSTFIELDS => json_encode(array('version'=> VERSION, 'd'=>$out))
+          CURLOPT_POSTFIELDS => gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
         ));
     } catch(Exception $e) { unset($e); get_execution_time(1); continue; }
     print "--- ".trim($curl_result) ." ".get_execution_time(1)."\n";
@@ -121,7 +121,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
 
   if($out['until'] == 0 || is_null($out['until']))
     $out['until'] = time();
-  while(time(true)-$stime < 3600*1) { //Just run for 6h and then commit.
+  while((time()-$stime) < (3600*1)) { //Just run for 6h and then commit.
     $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
     if(!isset($fb_data['data'])) {
       print "_"; flush(); ob_flush();

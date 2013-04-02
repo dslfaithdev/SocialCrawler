@@ -124,8 +124,6 @@ function update_page($id, $exec_time, $data){
 
   if(!$data['done']) { //For some reason did the agent not finish, continue where it left of.
     $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);";
-    $sql.="UPDATE post SET date=NULL, seq=".$db->quote($data['seq']).
-      "WHERE page_fb_id=". $db->quote($id) ." AND post_fb_id=0;";
     $db->exec($sql);
   }
   $db->query("COMMIT");
@@ -205,7 +203,6 @@ function pull_post($count=3) {
         $posts[] = array('id' => $row['page_fb_id'].'_'.$row['post_fb_id'], 'type' => 'post');
       }
     }
-    $result->closeCursor();
     try {
       $result = $db->exec($sql);
       $db->query("COMMIT");
@@ -226,7 +223,7 @@ function pull_post($count=3) {
 }
 
 function my_push() {
-  $rawData = file_get_contents('php://input','r');
+  $rawData = gzinflate(substr(file_get_contents('php://input'),10,-8));
   $postedJson = json_decode($rawData,true);
   if($postedJson['version'] < VERSION)
     die("Old version, please upgrade");
@@ -242,21 +239,21 @@ function my_push() {
       die("Wrong parameters");
     if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
-    if($post['status'] != "done") { //For some reason the agent did not complete insert to pull_posts.
-      $sql="INSERT INTO pull_posts VALUES (".$db->quote(strstr($post['id'],'_',true)).",".
-        (($post['type']== "page") ? "0" :  $db->quote(substr(strstr($post['id'],'_'),1))).")";
-      $result = $db->exec($sql);
-      continue;
-    }
 //    print "working with ". $post['id'] .PHP_EOL; flush();
     if($post['type'] == "page") { //Is it a stage one crawl.
       update_page($post['id'], $post['exec_time'], $post['data']);
       continue;
     }
+    if($post['status'] != "done") { //For some reason the agent did not complete, insert to pull_posts.
+      $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote(strstr($post['id'],'_',true)).",".
+        (($post['type']== "page") ? "0" :  $db->quote(substr(strstr($post['id'],'_'),1))).");";
+      $result = $db->exec($sql);
+      continue;
+    }
     //Make sure that we already have the posts file in the DB.
    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'_',page_fb_id,'_',post_fb_id,'.json')".
-      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post_id,'_',true)).
-      " AND post_fb_id=".$db->quote(substr(strstr($post_id,'_'),1));
+      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post['id'],'_',true)).
+      " AND post_fb_id=".$db->quote(substr(strstr($post['id'],'_'),1));
     $result = $db->query($sql);
     if(($row=$result->fetch())) {
       if(!phar_put_contents($row['fname'],
@@ -392,7 +389,7 @@ function stageone() {
     $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id, date)".
       " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0, 0".
       ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';\n";
-    $sql .= "INSERT INTO pull_posts VALUES (".$db->quote($id).",0);\n";
+    $sql .= "INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);\n";
     $sql .= "COMMIT;";
     $count = $db->exec($sql);
     if($db->errorCode() != 0) {
