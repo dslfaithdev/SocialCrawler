@@ -129,7 +129,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
     }
     print "."; flush(); ob_flush();
     foreach($fb_data['data'] as $curr_feed) {
-      $out['feed'][$out['seq']++] = [substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time'])];
+      $out['feed'][$out['seq']++] = array(substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time']));
       //Store the oldest created_time as epoc in until (so we can resume from that stage).
       if($out['until'] > strtotime($curr_feed['created_time'])-1)
         $out['until'] = strtotime($curr_feed['created_time'])-1;
