@@ -1,24 +1,12 @@
 <?php
 define('VERSION', 1.0);
-#$GLOBALS['maintenance']=TRUE;
-/*
- * Don't forget to set the default values below.
- */
-define('PDO_dsn','mysql:dbname=crawling;unix_socket=/tmp/mysql.sock');
-define('PDO_username','root');
-define('PDO_password', '');
-
+require_once('config.php');
 include_once('parser.php');
 
-ini_set('memory_limit', '512M');
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-ini_set('log_errors', 1);
-ini_set('error_log','logFile.log');
-$action='';
 if(isset($_GET['action']))
   $action = $_GET['action'];
-
+else
+  $action='';
 
 switch ($action) {
 case 'add':
@@ -191,7 +179,7 @@ function pull_post($count=3) {
         $page=$result->fetchAll();
         foreach($page as $p) {
           if(is_null($p['until'])) {
-            $since=$db->query("SELECT MAX(UNIX_TIMESTAMP(date)) FROM post WHERE page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
+            $since=$db->query("SELECT MIN(UNIX_TIMESTAMP(date)) FROM post WHERE page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
             $posts[] = [ 'id' => $row['page_fb_id'], 'type' => 'page',
               'data' => [ 'seq'=>$p['seq'], 'since'=>$since ] ];
           }

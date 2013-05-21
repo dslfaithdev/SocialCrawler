@@ -5,3 +5,5 @@ log/*
 controller/crawled
 controller/posts
 controller/raw
+controller/config.php
+
