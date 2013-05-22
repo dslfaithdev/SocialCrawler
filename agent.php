@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 1.0);
+define("VERSION", 2.0);
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
 require_once "./facebook-php/src/facebook.php";
@@ -108,7 +108,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
   $stime=time();
   get_execution_time(true);
   print  $page; flush();ob_flush();
-  $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time';
+  $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time,from.fields(id)';
   if(isset($out['until']) && $out['until'] !=0)
     $page.='&until='.$out['until'];
   $out=$out+array('seq'=>0,  'done'=>false, 'until'=>time(), 'feed'=>array());
@@ -129,7 +129,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
     }
     print "."; flush(); ob_flush();
     foreach($fb_data['data'] as $curr_feed) {
-      $out['feed'][$out['seq']++] = array(substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time']));
+      $out['feed'][$out['seq']++] = array(substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time']), $curr_feed['from']['id']);
       //Store the oldest created_time as epoc in until (so we can resume from that stage).
       if($out['until'] > strtotime($curr_feed['created_time'])-1)
         $out['until'] = strtotime($curr_feed['created_time'])-1;
