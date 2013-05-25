@@ -1,5 +1,5 @@
 <?php
-define('VERSION', 2.0);
+define('VERSION', 2.2);
 require_once('config.php');
 include_once('parser.php');
 
@@ -232,7 +232,25 @@ function my_push() {
       update_page($post['id'], $post['exec_time'], $post['data']);
       continue;
     }
-    if($post['status'] != "done") { //For some reason the agent did not complete, insert to pull_posts.
+    if($post['status'] != "done") { //For some reason the agent did not complete, switch trough error messages and try to react.
+      if(isset($post['error_msg'])) {
+      if(strpos($post['error_msg'], "(#21)") !== false) { //We got a error 21 "Page ID <old> was migrated to page ID <new>"
+        continue;
+      }
+      if(strpos($post['error_msg'], "Unsupported get request") !== false) { //We got a error 21 "Page ID <old> was migrated to page ID <new>"
+        $sql = "UPDATE post SET status = 'removed'".
+          ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
+          ", time = ".$post['exec_time'].
+          ", time_stamp = UNIX_TIMESTAMP()".
+          " WHERE page_fb_id = ".$db->quote(strstr($post['id'],'_',true))." AND ".
+          " post_fb_id= ".$db->quote(substr(strstr($post['id'],'_'),1)) ."; ";
+        //$result->closeCursor();
+        $query = $db->exec($sql);
+        //if($query != 1)
+          //die("DB error, try again.");
+          continue;
+      }
+      }
       $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote(strstr($post['id'],'_',true)).",".
         (($post['type']== "page") ? "0" :  $db->quote(substr(strstr($post['id'],'_'),1))).");";
       $result = $db->exec($sql);

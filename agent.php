@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.1);
+define("VERSION", 2.2);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -44,8 +44,8 @@ while(true) {
       throw new Exception("Json decode error.");
   } catch (Exception $e) { sleep(30); continue; }
   //Verify that we have the latest version.
-  if($result['version'] > VERSION%10)
-    die("You have an old version, please upgrade.");
+  if($result['version']%10 > VERSION)
+    die("You have an old version, please upgrade.".PHP_EOL);
   if($result['status'] != "ok" || count($result['posts']) == 0) {
     print "Did not receive any new posts :/.\nWill take a nap and try again.\n"; ob_flush();flush();
     sleep(1800); //30 min.
@@ -82,10 +82,11 @@ while(true) {
       print "-- Interrupted @ ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
       error_log(microtime(1) . ";". $e->getCode() .";[".get_class($e)."]".$e->getMessage().";".$currentPost['id']."\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
       $out[$currentPost['id']]['status'] = "error";
+      $out[$currentPost['id']]['error_msg'] = $e->getMessage();
     }
     $out[$currentPost['id']]['exec_time'] = microtime(true)-$start_time;
-#    file_put_contents('outputs/'.$currentPost, $data);
     $out[$currentPost['id']]['data'] = $data;
+    //file_put_contents('outputs/'.$currentPost['id'], json_encode($out[$currentPost['id']]));
   }
   //Push changes
   for($i=0; $i<10; $i++) {
@@ -178,7 +179,12 @@ function crawl($currentPost, $facebook) {
   if(isset($curr_feed['shares'],$curr_feed['shares']['count']) && $curr_feed['shares']['count'] != 0) {
     $page = substr(strrchr($currentPost, '_'),1). '/sharedposts?fields=from,updated_time,created_time,to';
     while($page) {
-      $fb_data = facebook_api_wrapper($facebook, $page);
+      try {
+        $fb_data = facebook_api_wrapper($facebook, $page);
+      } catch (Exception $e) {
+        $out .= "{\"ep_shares\":{\"data\":[]}}\n\n";
+        break;
+      }
       print "S"; flush(); ob_flush();
       $out .= sprintf("{\"ep_shares\":%s}\n\n", json_encode($fb_data));
       if (isset($fb_data['paging'],$fb_data['paging']['next']))
@@ -309,13 +315,15 @@ function facebook_api_wrapper($facebook, $url) {
       /* Try to handle strange errors with huge amounts of comments */
       if (strpos($e->getMessage(), "Operation timed out after") !== false)
         /* It seems like it might be possible to retrieve if one first gets only the id. */
-        try { $facebook->api($url, 'GET', array('limit' => 200, 'feilds' => 'id')); } catch ( Exception $ex ) { unset($ex); }
+        try { $facebook->api($url, 'GET', array('limit' => 200, 'fields' => 'id')); } catch ( Exception $ex ) { unset($ex); }
       if (strpos($e->getMessage(), "An unknown error has occurred.") !== false)
         return "$e-getMessage()";
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
-        return "$e-getMessage()";
+        throw $e;
+      if (strpos($e->getMessage(), "(#21)") !== false) //We got a error 21 "Page ID <id> was migrated to page ID <id>."
+        throw $e;
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
-        return "$e-getMessage()";
+        throw $e;
       if (strpos($e->getMessage(), "(#613)") !== false) //We got a error 613 "Calls to stream have exceeded the rate of 600 calls per 600 seconds."
         sleep(rand(60,240));
       if (strpos($e->getMessage(), "(#4)") !== false) //We got a error 4 "User request limit reached"
