@@ -22,8 +22,9 @@ $facebook = new Facebook(array(
 //Parse command line arguments as GET variables
 parse_str(implode('&', array_slice($argv, 1)), $_GET);
 if(!isset($_GET['token']))
-  die("You must provide me with an access token (visit: https://developers.facebook.com/tools/explorer/".APPID." and generate a token)\n");
-$token['access_token'] = $_GET['token'];
+  print "No token provided, will try to read from the file: ".dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN instead.".PHP_EOL;
+else
+  $token['access_token'] = $_GET['token'];
 renewAccessToken();
 # Registering shutdown function to redirect users.
 register_shutdown_function('fatalErrorHandler');
@@ -252,6 +253,13 @@ function crawl($currentPost, $facebook) {
 
 function renewAccessToken() {
   GLOBAL $facebook, $token;
+  $tokenFile = dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN";
+  if(file_exists($tokenFile)) {
+    $file = fopen($tokenFile, "r+");
+    $token['access_token'] = fgets($file);
+    ftruncate($file,0);
+    fseek($file,0);
+  }
   #Renew the accessToken
   $url='https://graph.facebook.com/oauth/access_token?client_id='.APPID.
     '&client_secret='.APPSEC.
@@ -269,6 +277,11 @@ function renewAccessToken() {
   $token['expire_time'] = $token['expires']+time();
   print "New token: " . $token['access_token'];
   print "\nToken expires in ". ($token['expire_time'] - time()) ." secs <br/>\n\n";
+  flush();
+  if(!isset($file))
+    $file = fopen($tokenFile,"w+");
+  fwrite($file,$token['access_token'].PHP_EOL);
+  fclose($file);
 }
 
 /**
@@ -343,14 +356,18 @@ function facebook_api_wrapper($facebook, $url) {
 function fatalErrorHandler() {
   # Getting last error
   $error = error_get_last();
-  error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
   # Checking if last error is a fatal error
   if(($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR)) {
-    # Here we handle the error, displaying HTML, logging, ...
-    echo 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
-    echo "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".selfURL()."\"</script>\n";
-    print microtime(true) . "<br/>\n";
-  }
+    error_log(microtime(1) . ";".$error['type'].";"."DIED: ".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
+    print microtime(1) . ";".$error['type'].";".$error['message'].PHP_EOL;
+    flush(); ob_flush();
+    if(php_sapi_name() !== 'cli') {
+      # Here we handle the error, displaying HTML, logging, ...
+      print 'Sorry, a serious error has occured but don\'t worry, I\'ll redirect the user<br/>\n';
+      print "<br/>\n".get_execution_time()."<br/>\n\n<script> top.location = \"".selfURL()."\"</script>\n";
+    }
+  } else
+    error_log(microtime(1) . ";".$error['type'].";".$error['message'].";\n",3,dirname($_SERVER['SCRIPT_FILENAME']) . "/log/error.log" );
 }
 
 function selfURL() {
