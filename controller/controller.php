@@ -105,7 +105,10 @@ function update_page($id, $exec_time, $data){
   $sth = $db->exec($sql);
   $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id, from_user)".
       " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, FROM_UNIXTIME(:date), :page_fb_id, :post_fb_id, :from)".
-      " ON DUPLICATE KEY UPDATE time_stamp = UNIX_TIMESTAMP(), status=IF(`status`='done','updated','new'), date=FROM_UNIXTIME(:date), seq=:seq, from_user=:from;";
+      " ON DUPLICATE KEY UPDATE".
+      " time_stamp = IF ((`status`='done' OR `status`='updated') AND `date`<>FROM_UNIXTIME(:date), UNIX_TIMESTAMP(), `time_stamp`),".
+      " status = IF ((`status`='done' OR `status`='updated') AND `date`<>FROM_UNIXTIME(:date), 'updated', `status`),".
+      " date=FROM_UNIXTIME(:date), seq=:seq, from_user=:from;";
   $sth = $db->prepare($sql);
   foreach($data['feed'] as $seq => $post)
     $sth->execute([ 'seq'=>$seq, 'date'=>$post[1], 'page_fb_id'=>$id, 'post_fb_id'=>$post[0], 'from'=>$post[2] ]);
