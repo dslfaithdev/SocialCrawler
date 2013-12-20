@@ -40,10 +40,10 @@ be over 18 of age to support crawling of all types of pages.
 Extracts all the access tokens of your test users with **testuser.php** script:
 ```Shell
 $ php testuser.php 
-Write access of test user #1 into TOKEN.1
-Write access of test user #2 into TOKEN.2
-Write access of test user #3 into TOKEN.3
-Write access of test user #4 into TOKEN.4
+Write access token of test user #1 into TOKEN.1
+Write access token of test user #2 into TOKEN.2
+Write access token of test user #3 into TOKEN.3
+Write access token of test user #4 into TOKEN.4
 ```
 
 Check extracted tokens:
