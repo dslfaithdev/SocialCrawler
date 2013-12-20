@@ -35,8 +35,26 @@ The __FACEBOOK_USER_TOKEN__ is generated via the graph explorer page
 https://developers.facebook.com/tools/explorer/  using an user that is said to 
 be over 18 of age to support crawling of all types of pages.
 
+#### Crawling with test users ####
 
+Extracts all the access tokens of your test users with **testuser.php** script:
+```Shell
+$ php testuser.php 
+Write access of test user #1 into TOKEN.1
+Write access of test user #2 into TOKEN.2
+Write access of test user #3 into TOKEN.3
+Write access of test user #4 into TOKEN.4
+```
 
+Check extracted tokens:
+```Shell
+$ ls TOKEN.*
+TOKEN.1  TOKEN.2  TOKEN.3  TOKEN.4
+```
 
+launch the crawler with the token files:
+```Shell
+$ php agent.php token_file\=TOKEN.1
+```
 
 ***Happy crawling!!***
