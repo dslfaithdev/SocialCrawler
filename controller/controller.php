@@ -58,7 +58,7 @@ function crawl_stat() {
   }
   $timeSpan = [ '30 min' => 1800, 'hour' => 3600, '6 hours' => 3600*6,
     '12 hours' => 3600*12, '24 hours' => 3600*24, '48 hours' => 3600*48 ];
-  foreach ( $timeSpan as $time => $sec) 
+  foreach ( $timeSpan as $time => $sec)
   {
     print "<div style=\" display: inline-block; margin: 10px; \">";
     print "Status over the last ". $time . PHP_EOL;
@@ -77,7 +77,7 @@ function crawl_stat() {
     print "<table class='tablesorter' style='width: 0 !important;'>\n";
     print "<tr><th>Status</th><th>Total</th></tr>\n";
     $query=$db->query("SELECT status, FORMAT(COUNT(*),0) AS count FROM post GROUP BY status");
-    while ($entry = $query->fetch(PDO::FETCH_NUM )) 
+    while ($entry = $query->fetch(PDO::FETCH_NUM ))
       print "<tr><td>".$entry[0]."</td><td>".$entry[1]."</td></tr>\n";
     $exec_time_row = $db->query("SELECT query_id, SUM(duration) FROM information_schema.profiling GROUP BY query_id ORDER BY query_id DESC LIMIT 1;")
       ->fetch(PDO::FETCH_NUM);
@@ -286,8 +286,6 @@ function pull_post($count=3) {
 function my_push() {
   $rawData = gzinflate(substr(file_get_contents('php://input'),10,-8));
   $postedJson = json_decode($rawData,true);
-  if($postedJson['version'] < VERSION)
-    die("Old version, please upgrade");
 
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
@@ -496,9 +494,17 @@ function stageone() {
 
 function phar_put_contents($fname, $archive, $data) {
   $i=0;
+  $fp = FALSE;
   do {
-    $fp = @fopen($archive.'.lock', 'w');
-    if(!$fp) {
+    try{
+      $fp = fopen($archive.'.lock', 'w');
+      if(!$fp) {
+        usleep(25);
+        continue;
+      }
+    }
+    catch (Exception $er) {
+      //  error_log($i . "::". $er->getMessage()." $i in ".$er->getFile().":".$er->getLine(),0);
       usleep(25);
       continue;
     }
@@ -512,31 +518,30 @@ function phar_put_contents($fname, $archive, $data) {
             //Compress.
             $p = new PharData($newName.'.tar',0);
             $p->compress(Phar::GZ);
-            //unlink($archive.'.tar');
+            rename($newName.'.tar.gz', dirname($newName.'.tar').'/gz/'.basename($newName).'.tar.gz');
+            rename($newName.'.tar', dirname($newName.'.tar').'/tar/'.basename($newName).'.tar');
           }
         file_put_contents('/tmp/'.$fname, $data);
         $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /tmp ".$fname;
         exec($tarCmd." 2>&1", $result, $status);
         if($status!=0)
-          throw new Exception($tarCmd . implode($result, "\n"));
+          throw new Exception($result[0]);
         @unlink('/tmp/'.$fname);
-        /*
-         *$myPhar = new PharData($archive.'.tar',0);
-         *$myPhar[$fname] = $data;
-         * //$myPhar[$fname]->compress(Phar::GZ); //We don't support file compression *yet*
-         *$myPhar->stopBuffering();
-         */
-        flock($fp, LOCK_UN) && @fclose($fp);
+        @flock($fp, LOCK_UN) && @fclose($fp);
         @unlink($archive.'.lock');
         return true;
       } catch (Exception $e) {
         if(strpos($e->getMessage(),'unlink') === false)
           error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
         unset($e);
-        try {@flock($fp, LOCK_UN) && @fclose($fp);} catch (Exception $e) {}
+        @flock($fp, LOCK_UN) && @fclose($fp);
+        @unlink($archive.'.lock');
       }
     }
   } while ($i++<8);
+  error_log($er->getMessage()." in ".$er->getFile().":".$er->getLine(),0);
+  @flock($fp, LOCK_UN) && @fclose($fp);
+  @unlink($archive.'.lock');
   return false;
 }
 
