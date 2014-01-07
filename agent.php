@@ -330,7 +330,7 @@ function facebook_api_wrapper($facebook, $url) {
         /* It seems like it might be possible to retrieve if one first gets only the id. */
         try { $facebook->api($url, 'GET', array('limit' => 200, 'fields' => 'id')); } catch ( Exception $ex ) { unset($ex); }
       if (strpos($e->getMessage(), "An unknown error has occurred.") !== false)
-        return "$e-getMessage()";
+        throw $e;
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
         throw $e;
       if (strpos($e->getMessage(), "(#21)") !== false) //We got a error 21 "Page ID <id> was migrated to page ID <id>."
