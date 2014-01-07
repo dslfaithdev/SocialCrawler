@@ -21,10 +21,80 @@ case 'push':
 case 'stageone':
   stageone();
   break;
-default:
+case 'page_stat':
   my_list();
+  break;
+default:
+  crawl_stat();
 }
 
+function crawl_stat() {
+?>
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml"  xml:lang="en" lang="en">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+  <title>Crawling status </title>
+  <link rel="stylesheet" href="html/style.css" type="text/css" id="style" media="print, projection, screen" />
+</head>
+<body>
+<?
+  if(isset($_GET['total']))
+    print '<a href="'.$_SERVER["SCRIPT_NAME"].'">Current post status</a>&nbsp;';
+  else
+    print '<a href="'.$_SERVER["SCRIPT_NAME"].'?total">Total post status (slow)</a>&nbsp;';
+?>
+  <a href="<?$_SERVER["SCRIPT_NAME"]?>?action=page_stat">Status of all pages (slower)</a>&nbsp;
+  <a href="<?$_SERVER["SCRIPT_NAME"]?>?action=stageone">Insert new page</a>&nbsp;
+  <br/>
+  <?
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
+    $db->query("SET profiling = 1;");
+  } catch (PDOException $e) {
+    die("DB error, try again.");
+  }
+  $timeSpan = [ '30 min' => 1800, 'hour' => 3600, '6 hours' => 3600*6,
+    '12 hours' => 3600*12, '24 hours' => 3600*24, '48 hours' => 3600*48 ];
+  foreach ( $timeSpan as $time => $sec) 
+  {
+    print "<div style=\" display: inline-block; margin: 10px; \">";
+    print "Status over the last ". $time . PHP_EOL;
+    print "<table class='tablesorter' style='width: 0 !important; margin: auto; margin-right: auto;'>\n";
+    print "<tr><th>Status</th><th>Total</th><th>Per sec</th></tr>\n";
+    $query=$db->query("SELECT status, COUNT(*), COUNT(*)/$sec FROM post WHERE time_stamp>UNIX_TIMESTAMP()-".$sec." GROUP BY status;");
+    while ($entry = $query->fetch(PDO::FETCH_NUM ))
+      print "<tr><td>".$entry[0]."</td><td>".$entry[1]."</td><td>".$entry[2]."</td></tr>\n";
+    $exec_time_row = $db->query("SELECT query_id, SUM(duration) FROM information_schema.profiling GROUP BY query_id ORDER BY query_id DESC LIMIT 1;")
+      ->fetch(PDO::FETCH_NUM);
+    print "</table>Exec time: ".$exec_time_row[1]."</div>";
+    ob_flush();flush();
+  }
+  if(isset($_GET['total'])) {
+    print "<br/>Total status";
+    print "<table class='tablesorter' style='width: 0 !important;'>\n";
+    print "<tr><th>Status</th><th>Total</th></tr>\n";
+    $query=$db->query("SELECT status, FORMAT(COUNT(*),0) AS count FROM post GROUP BY status");
+    while ($entry = $query->fetch(PDO::FETCH_NUM )) 
+      print "<tr><td>".$entry[0]."</td><td>".$entry[1]."</td></tr>\n";
+    $exec_time_row = $db->query("SELECT query_id, SUM(duration) FROM information_schema.profiling GROUP BY query_id ORDER BY query_id DESC LIMIT 1;")
+      ->fetch(PDO::FETCH_NUM);
+    print "</table>Exec time: ".$exec_time_row[1];
+  }
+?>
+<br/>
+<span style="text-decoration: underline">Legend</span><br/><ul>
+<li>  done = Crawled completely</li>
+<li>  new = Added to DB without processing</li>
+<li>  pulled = Checked out by an agent</li>
+<li>  updated = Post have been updated since last crawl</li>
+<li>  removed = Post does no longer exist on Facebook</li>
+</ul>
+</body></html>
+<?
+}
 #Checkout file, add to db.
 function checkout() {
   die("this is depricated..");
@@ -311,7 +381,8 @@ function my_list() {
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "30");
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
+    $db->query("SET profiling = 1;");
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -332,8 +403,11 @@ function my_list() {
       print "<td>".$column."</td>";
     }
     print "</tr>\n";
+    flush(); ob_flush();
   }
-  print "</tbody></table></body></html>";
+  $exec_time_row = $db->query("SELECT query_id, SUM(duration) FROM information_schema.profiling GROUP BY query_id ORDER BY query_id DESC LIMIT 1;")
+    ->fetch(PDO::FETCH_NUM);
+  print "</tbody></table>Exec time: ".$exec_time_row[1]."</body></html>";
 }
 
 function stageone() {
@@ -419,6 +493,7 @@ function stageone() {
     </form>
     </body></html>');
 }
+
 function phar_put_contents($fname, $archive, $data) {
   $i=0;
   do {
@@ -464,4 +539,5 @@ function phar_put_contents($fname, $archive, $data) {
   } while ($i++<8);
   return false;
 }
+
 ?>

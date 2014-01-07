@@ -1,3 +1,11 @@
+body {
+  font: 11px/18px Arial, Sans-serif;
+}
+a:link {color:#66E;}    /* unvisited link */
+a:visited {color:#66E;} /* visited link */
+a:hover {color:#000;}   /* mouse over link */
+a:active {color:#000;}  /* selected link */
+
 /* Blue Theme */
 table.tablesorter {
 	font: 11px/18px Arial, Sans-serif;
