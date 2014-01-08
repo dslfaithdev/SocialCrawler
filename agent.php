@@ -219,7 +219,9 @@ function crawl($currentPost, $facebook) {
         $old_url="";
         print "l"; flush(); ob_flush();
         while($ec_likes) {
-            $out .= sprintf("{\"ec_likes\":%s}\n\n", json_encode($ec_likes));
+            $out .= sprintf("{\"ec_likes\":%s,\"id\":\"%s\"}}\n\n",
+              substr(json_encode($ec_likes),0,-1), //remove the last } to support adding a new field (id)
+              $ec_comment['id']);
             if (isset($ec_likes['paging']) && isset($ec_likes['paging']['next'])) {
               $ec_likes_page = $ec_likes['paging']['next'];
               if($ec_likes_page == $old_url) {
