@@ -205,32 +205,27 @@ function pull_post($count=3) {
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "120");
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "10");
   } catch (PDOException $e) {
     die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
   }
-  //Make sure we are not already adding items to our helper table.
-  for ($i = 0; $i < 20; $i++) {
-    $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id = 0");
-    if ($result->fetchColumn() == 0)
-      break;
-    sleep(10);
-  }
-  $result = $db->query("SELECT count(*) FROM pull_posts WHERE page_fb_id != 0");
-  if ($result->fetchColumn() <= $count + 10) {
-    // Add posts to our helper..
-    $sql = "set session binlog_format = 'MIXED'; INSERT IGNORE INTO pull_posts VALUES (0,0);";
-    $sql .= "INSERT IGNORE INTO pull_posts ".
+  $result = $db->query("SELECT count(*) FROM pull_posts")->fetchColumn();
+  if ($result <= $count + 10) {
+    // Add posts to our helper, but first lock the table..
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "600");
+    $sql = "SET SESSION BINLOG_FORMAT = 'MIXED'; LOCK TABLES pull_posts READ, posts WRITE;";
+    $db->exec($sql);
+    $sql = "INSERT IGNORE INTO pull_posts ".
       "SELECT page_fb_id, post_fb_id FROM ".
       "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
       "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
       "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
       "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.  86400 == 24h
-    $sql .= "DELETE FROM pull_posts WHERE page_fb_id = 0;";
-    $db->query($sql);
+    $db->exec($sql);
+    $db->exec("UNLOCK TABLES;");
   }
   for($i=0;$i<5;$i++) { //This should be a mysql procedure.
-    $db->exec("set session binlog_format = 'MIXED'; START TRANSACTION");
+    $db->exec("SET SESSION BINLOG_FORMAT = 'MIXED'; START TRANSACTION");
     $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
     $result = $db->query($sql);
     if($result->rowCount() == 0)
