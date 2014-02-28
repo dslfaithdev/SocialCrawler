@@ -494,18 +494,22 @@ function stageone() {
 
 function phar_put_contents($fname, $archive, $data) {
   $i=0;
-  $fp = FALSE;
+  $fp = NULL;
   do {
     try{
-      $fp = fopen($archive.'.lock', 'w');
+      if(file_exists($archive.'.lock')) {
+        usleep(rand(1,100));
+        continue;
+      }
+      $fp = fopen($archive.'.lock', 'x');
       if(!$fp) {
-        usleep(25);
+        usleep(rand(1,100));
         continue;
       }
     }
     catch (Exception $er) {
-      //  error_log($i . "::". $er->getMessage()." $i in ".$er->getFile().":".$er->getLine(),0);
-      usleep(25);
+      error_log($i . "::". $er->getMessage()." $i in ".$er->getFile().":".$er->getLine(),0);
+      usleep(rand(1,100));
       continue;
     }
     if(flock($fp, LOCK_EX)) {
@@ -527,21 +531,29 @@ function phar_put_contents($fname, $archive, $data) {
         if($status!=0)
           throw new Exception($result[0]);
         @unlink('/tmp/'.$fname);
-        @flock($fp, LOCK_UN) && @fclose($fp);
+        @flock($fp, LOCK_UN) && @fclose($fp) && $fp = NULL;
         @unlink($archive.'.lock');
         return true;
       } catch (Exception $e) {
         if(strpos($e->getMessage(),'unlink') === false)
           error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
         unset($e);
-        @flock($fp, LOCK_UN) && @fclose($fp);
-        @unlink($archive.'.lock');
+        try {
+          if($fp) {
+            @flock($fp, LOCK_UN) && @fclose($fp);
+          }
+          unlink($archive.'.lock');
+        } catch (Exception $e) {}
       }
     }
-  } while ($i++<8);
-  error_log($er->getMessage()." in ".$er->getFile().":".$er->getLine(),0);
-  @flock($fp, LOCK_UN) && @fclose($fp);
-  @unlink($archive.'.lock');
+  } while ($i++<200);
+  error_log("Could not get lock of file." . PHP_EOL ,0);
+  try {
+    if($fp) {
+      @flock($fp, LOCK_EX_UN) && @fclose($fp);
+    }
+    @unlink($archive.'.lock');
+  } catch (Exception $e) {}
   return false;
 }
 
