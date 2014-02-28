@@ -285,6 +285,7 @@ function my_push() {
   try {
     $db = new PDO(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "60");
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -310,8 +311,7 @@ function my_push() {
           ", time_stamp = UNIX_TIMESTAMP()".
           " WHERE page_fb_id = ".$db->quote(strstr($post['id'],'_',true))." AND ".
           " post_fb_id= ".$db->quote(substr(strstr($post['id'],'_'),1)) ."; ";
-        //$result->closeCursor();
-        $query = $db->exec($sql);
+        $result = $db->exec($sql);
         //if($query != 1)
           //die("DB error, try again.");
           continue;
@@ -327,11 +327,15 @@ function my_push() {
       " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post['id'],'_',true)).
       " AND post_fb_id=".$db->quote(substr(strstr($post['id'],'_'),1));
     $result = $db->query($sql);
-    if(($row=$result->fetch())) {
-      if(!phar_put_contents($row['fname'],
-        realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'],
-        $post['data']))
-        continue; //We did not manage to write to our phar archive, try with next post.
+    if(($row=$result->fetchAll()[0])) {
+      $archive = realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'];
+      //Lock archive, this lock will be released when we get a new lock or close connection.
+      $lock = $db->query("SELECT GET_LOCK(".$db->quote($archive).", 10);")->fetchAll()[0][0];
+      if($lock != 1) //Unable to get lock.
+        die("Unable to get lock for: " . $archive);
+      if(!phar_put_contents($row['fname'], $archive, $post['data']))
+        die("Unable to write the file: " . $row['fname']);
+        //continue; //We did not manage to write to our phar archive, try with next post.
 
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
@@ -488,67 +492,28 @@ function stageone() {
 }
 
 function phar_put_contents($fname, $archive, $data) {
-  $i=0;
-  $fp = NULL;
-  do {
-    try{
-      if(file_exists($archive.'.lock')) {
-        usleep(rand(1,100));
-        continue;
+  try{
+    if(file_exists($archive.'.tar') &&
+      filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
+        $newName = $archive.'-'.time();
+        //Move archive to archive-EPOC.tar
+        rename($archive.'.tar', $newName.'.tar');
+        //Compress.
+        $p = new PharData($newName.'.tar',0);
+        $p->compress(Phar::GZ);
+        rename($newName.'.tar.gz', dirname($newName.'.tar').'/gz/'.basename($newName).'.tar.gz');
+        rename($newName.'.tar', dirname($newName.'.tar').'/tar/'.basename($newName).'.tar');
       }
-      $fp = fopen($archive.'.lock', 'x');
-      if(!$fp) {
-        usleep(rand(1,100));
-        continue;
-      }
-    }
-    catch (Exception $er) {
-      error_log($i . "::". $er->getMessage()." $i in ".$er->getFile().":".$er->getLine(),0);
-      usleep(rand(1,100));
-      continue;
-    }
-    if(flock($fp, LOCK_EX)) {
-      try{
-        if(file_exists($archive.'.tar') &&
-          filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
-            $newName = $archive.'-'.time();
-            //Move archive to archive-EPOC.tar
-            rename($archive.'.tar', $newName.'.tar');
-            //Compress.
-            $p = new PharData($newName.'.tar',0);
-            $p->compress(Phar::GZ);
-            rename($newName.'.tar.gz', dirname($newName.'.tar').'/gz/'.basename($newName).'.tar.gz');
-            rename($newName.'.tar', dirname($newName.'.tar').'/tar/'.basename($newName).'.tar');
-          }
-        file_put_contents('/tmp/'.$fname, $data);
-        $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /tmp ".$fname;
-        exec($tarCmd." 2>&1", $result, $status);
-        if($status!=0)
-          throw new Exception($result[0]);
-        @unlink('/tmp/'.$fname);
-        @flock($fp, LOCK_UN) && @fclose($fp) && $fp = NULL;
-        @unlink($archive.'.lock');
-        return true;
-      } catch (Exception $e) {
-        if(strpos($e->getMessage(),'unlink') === false)
-          error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
-        unset($e);
-        try {
-          if($fp) {
-            @flock($fp, LOCK_UN) && @fclose($fp);
-          }
-          unlink($archive.'.lock');
-        } catch (Exception $e) {}
-      }
-    }
-  } while ($i++<200);
-  error_log("Could not get lock of file." . PHP_EOL ,0);
-  try {
-    if($fp) {
-      @flock($fp, LOCK_EX_UN) && @fclose($fp);
-    }
-    @unlink($archive.'.lock');
-  } catch (Exception $e) {}
+    file_put_contents('/tmp/'.$fname, $data);
+    $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /tmp ".$fname;
+    exec($tarCmd." 2>&1", $result, $status);
+    @unlink('/tmp/'.$fname);
+    if($status!=0)
+      throw new Exception($result[0]);
+    return true;
+  } catch (Exception $e) {
+    error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+  }
   return false;
 }
 
