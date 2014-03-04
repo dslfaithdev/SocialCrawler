@@ -24,8 +24,44 @@ case 'stageone':
 case 'page_stat':
   my_list();
   break;
+case 'prioritize':
+  prioritize();
+  break;
 default:
   crawl_stat();
+}
+
+function prioritize() {
+  try {
+    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
+    $db->query("SET profiling = 1;");
+  } catch (PDOException $e) {
+    die("DB error, try again.");
+  }
+  $pages = $_GET['page'];
+  //$posts = $_GET['post'];
+  $sql = "INSERT IGNORE INTO pull_posts SELECT page_fb_id, post_fb_id FROM" .
+    "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM post WHERE status IN ('pulled', 'updated', 'new', 'recrawl') AND page_fb_id in (" .
+    $pages .
+    ") ORDER BY ts) AS tmp;";
+
+  $rows = $db->exec($sql);
+  print $rows . " added to queue (as they already are in the db). Will add all pages as new pages too.<br/><hr/>";
+  ob_flush(); flush();
+  $db = null;
+
+  foreach(explode(',', $pages) as $page) {
+    $_GET['id'] = $page;
+    stageone();
+    ob_flush(); flush();
+  }
+
+  print "All done..";
+  //$rows = $db->exec("INSERT IGNORE INTO pull_posts (page_fb_id) VALUES ".preg_replace('/(\d+)/','($1)',$pages));
+  //print $rows . " added to queue.";
+  return;
 }
 
 function crawl_stat() {
@@ -414,6 +450,7 @@ function stageone() {
     try {
       $db = new PDO(PDO_dsn, PDO_username, PDO_password);
       $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+      $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
     } catch (PDOException $e) {
       die("DB error, try again.");
     }
@@ -430,9 +467,15 @@ function stageone() {
       try {
         if(isset($_GET['token']))
           $token="?access_token=".$_GET['token'];
-        $handle = fopen("https://graph.facebook.com/".$id.$token,"rb");
-        $contents = stream_get_contents($handle);
+        $curl = curl_init("https://graph.Facebook.com/".$id.$token);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 2);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
+        $contents = curl_exec($curl);
         $json = json_decode($contents,true);
+        if(isset($json['error'])) {
+          print "Error fetching page: ". $id. "<br/>".PHP_EOL;
+          throw new Exception("400 Bad Request");
+        }
         if(isset($json['username']))
           $user=$json['username'];
         else
@@ -457,10 +500,13 @@ function stageone() {
             Access token: <input type="text" name="token"/><br/>
             <input type="submit" value="Submit">
             </form>';
-          die('</body></html>');
+          print '</body></html>';
+          return;
         }
-        else
-          die($e->getMessage());
+        else {
+          print $e->getMessage();
+          return;
+        }
       }
     }
     $sql = "BEGIN;\n";
@@ -481,6 +527,8 @@ function stageone() {
       print "<img src=\"http://graph.facebook.com/".$id."/picture/\">Added the page '".$name."' to the crawlDB<br/>";
     }
   }
+  if($_GET['action'] != 'stageone')
+    return;
   die('
     Please enter page id, page url or shortname to add a new page to the crawlDB<br/>
     <form  action="'.$_SERVER['PHP_SELF'].'">
