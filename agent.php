@@ -21,8 +21,14 @@ $facebook = new Facebook(array(
 
 //Parse command line arguments as GET variables
 parse_str(implode('&', array_slice($argv, 1)), $_GET);
+
+if(!isset($_GET['token_file'])) 
+  $tokenFile = dirname($_SERVER['SCRIPT_FILENAME'])."/TOKEN";
+else
+  $tokenFile = $_GET['token_file'];
+
 if(!isset($_GET['token']))
-  print "No token provided, will try to read from the file: ".dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN instead.".PHP_EOL;
+  print "No token provided, will try to read from the file: ".$tokenFile." instead.".PHP_EOL;
 else
   $token['access_token'] = $_GET['token'];
 renewAccessToken();
@@ -254,8 +260,7 @@ function crawl($currentPost, $facebook) {
 }
 
 function renewAccessToken() {
-  GLOBAL $facebook, $token;
-  $tokenFile = dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN";
+  GLOBAL $facebook, $token, $tokenFile;
   if(file_exists($tokenFile)) {
     $file = fopen($tokenFile, "r+");
     $token['access_token'] = fgets($file);
