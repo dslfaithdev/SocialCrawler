@@ -1,6 +1,7 @@
 <?php
-define('VERSION', 2.2);
+define('VERSION', 2.3);
 require_once('config.php');
+include_once('include/pdoReconnect.php');
 include_once('parser.php');
 
 if(isset($_GET['action']))
@@ -33,10 +34,7 @@ default:
 
 function prioritize() {
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
-    $db->query("SET profiling = 1;");
+    $db = dbConnect(0, array("SET profiling = 1;","SET SESSION wait_timeout = 28800;"));
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -85,10 +83,7 @@ function crawl_stat() {
   <br/>
   <?
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
-    $db->query("SET profiling = 1;");
+    $db = dbConnect(0, array("SET profiling = 1;","SET SESSION wait_timeout = 28800;"));
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -137,8 +132,7 @@ function checkout() {
   set_time_limit(0);
   $count = 0;
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db = dbConnect(0);
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -187,8 +181,7 @@ function checkout() {
  */
 function update_page($id, $exec_time, $data){
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
+    $db = dbConnect(0, array("SET SESSION wait_timeout = 28800;"));
   } catch (PDOException $e) {
     error_log($e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
     return false;
@@ -216,6 +209,7 @@ function update_page($id, $exec_time, $data){
       " status = IF ((`status`='done' OR `status`='updated') AND `date`<>FROM_UNIXTIME(:date), 'updated', `status`),".
       " date=FROM_UNIXTIME(:date), seq=:seq, from_user=:from;";
   $sth = $db->prepare($sql);
+  $seq = "";
   foreach($data['feed'] as $seq => $post)
     $sth->execute([ 'seq'=>$seq, 'date'=>$post[1], 'page_fb_id'=>$id, 'post_fb_id'=>$post[0], 'from'=>$post[2] ]);
 
@@ -239,16 +233,16 @@ function pull_post($count=3) {
   if($count < 1)
     $count = 3;
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "10");
+    $db = dbConnect(0, array("SET SESSION wait_timeout = 10;"));
   } catch (PDOException $e) {
     die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
   }
-  $result = $db->query("SELECT count(*) FROM pull_posts")->fetchColumn();
+  try { $result = $db->query("SELECT count(*) FROM pull_posts")->fetchColumn();
+  } catch (PDOException $e) { die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret)); }
   if ($result <= $count + 10) {
     // Add posts to our helper, but first lock the table..
     $db->setAttribute(PDO::ATTR_TIMEOUT, "600");
+    $db->exec("SET SESSION wait_timeout = 600;");
     $sql = "SET SESSION BINLOG_FORMAT = 'MIXED'; LOCK TABLES pull_posts READ, posts WRITE;";
     $db->exec($sql);
     $sql = "INSERT IGNORE INTO pull_posts ".
@@ -263,7 +257,8 @@ function pull_post($count=3) {
   for($i=0;$i<5;$i++) { //This should be a mysql procedure.
     $db->exec("SET SESSION BINLOG_FORMAT = 'MIXED'; START TRANSACTION");
     $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
-    $result = $db->query($sql);
+    try { $result = $db->query($sql);
+    } catch (PDOException $e) { die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret)); }
     if($result->rowCount() == 0)
       die(json_encode(array('status'=>'no new posts')+$ret));
     $rows=$result->fetchAll();
@@ -319,9 +314,7 @@ function my_push() {
   $postedJson = json_decode($rawData,true);
 
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "60");
+    $dbPDO = dbConnect(0, array("SET SESSION wait_timeout = 300;"));
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -342,31 +335,31 @@ function my_push() {
       }
       if(strpos($post['error_msg'], "Unsupported get request") !== false) { //We got a error 21 "Page ID <old> was migrated to page ID <new>"
         $sql = "UPDATE post SET status = 'removed'".
-          ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
+          ", who = INET_ATON(".$dbPDO->quote($_SERVER["REMOTE_ADDR"]).") ".
           ", time = ".$post['exec_time'].
           ", time_stamp = UNIX_TIMESTAMP()".
-          " WHERE page_fb_id = ".$db->quote(strstr($post['id'],'_',true))." AND ".
-          " post_fb_id= ".$db->quote(substr(strstr($post['id'],'_'),1)) ."; ";
-        $result = $db->exec($sql);
+          " WHERE page_fb_id = ".$dbPDO->quote(strstr($post['id'],'_',true))." AND ".
+          " post_fb_id= ".$dbPDO->quote(substr(strstr($post['id'],'_'),1)) ."; ";
+        $result = $dbPDO->exec($sql);
         //if($query != 1)
           //die("DB error, try again.");
           continue;
       }
       }
-      $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote(strstr($post['id'],'_',true)).",".
-        (($post['type']== "page") ? "0" :  $db->quote(substr(strstr($post['id'],'_'),1))).");";
-      $result = $db->exec($sql);
+      $sql="INSERT IGNORE INTO pull_posts VALUES (".$dbPDO->quote(strstr($post['id'],'_',true)).",".
+        (($post['type']== "page") ? "0" :  $dbPDO->quote(substr(strstr($post['id'],'_'),1))).");";
+      $result = $dbPDO->exec($sql);
       continue;
     }
     //Make sure that we already have the posts file in the DB.
    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'_',page_fb_id,'_',post_fb_id,'.json')".
-      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$db->quote(strstr($post['id'],'_',true)).
-      " AND post_fb_id=".$db->quote(substr(strstr($post['id'],'_'),1));
-    $result = $db->query($sql);
+      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$dbPDO->quote(strstr($post['id'],'_',true)).
+      " AND post_fb_id=".$dbPDO->quote(substr(strstr($post['id'],'_'),1));
+    $result = $dbPDO->query($sql);
     if(($row=$result->fetchAll()[0])) {
       $archive = realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'];
       //Lock archive, this lock will be released when we get a new lock or close connection.
-      $lock = $db->query("SELECT GET_LOCK(".$db->quote($archive).", 10);")->fetchAll()[0][0];
+      $lock = $dbPDO->query("SELECT GET_LOCK(".$dbPDO->quote($archive).", 30);")->fetchAll()[0][0];
       if($lock != 1) //Unable to get lock.
         die("Unable to get lock for: " . $archive);
       if(!phar_put_contents($row['fname'], $archive, $post['data']))
@@ -374,31 +367,29 @@ function my_push() {
         //continue; //We did not manage to write to our phar archive, try with next post.
 
       $sql = "UPDATE post SET status = 'done'".
-        ", who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]).") ".
+        ", who = INET_ATON(".$dbPDO->quote($_SERVER["REMOTE_ADDR"]).") ".
         ", time = ".$post['exec_time'].
         ", time_stamp = UNIX_TIMESTAMP()".
         " WHERE page_fb_id = ".$row['page_fb_id']." AND ".
         " post_fb_id= ".$row['post_fb_id']."; ";
-      $result->closeCursor();
-      $query = $db->exec($sql);
+      $query = $dbPDO->exec($sql);
       if($query != 1)
         die("DB error, try again.");
 
-      continue;
       /*
        * Insert into db
        */
-      $mysqli = new mysqli("localhost", "sincere", "1234", "crawled");
-      if ($mysqli->connect_error) {
-        error_log('Connect Error F ('.$mysqli->connect_errno.') '.$mysqli->connect_error, 0);
+      $db = new mysqli(MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB, MYSQL_PORT);
+      if ($db->connect_error) {
+        error_log('Connect Error F ('.$db->connect_errno.') '.$db->connect_error, 0);
         continue;
       }
-      $GLOBALS['mysqli'] = &$mysqli;
+      $GLOBALS['db'] = &$db;
       try {
-        insertToDB(parseJsonString($post['data'],$mysqli));
-        $mysqli->close();
+        insertToDB(parseJsonString($post['data']), $db);
+        $db->close();
       } catch (Exception $e) {
-        error_log("Parse Error (".$row['id'].") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+        error_log("Parse Error (".($post['id']).") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
       }
     } else {
       die("No post with id $post_id in db");
@@ -412,10 +403,8 @@ function my_list() {
   require('html/list.html.php');
   flush();
   try {
-    $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-    $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
-    $db->query("SET profiling = 1;");
+    $db = dbConnect(0);
+    $db->exec("SET SESSION wait_timeout = 28800;");
   } catch (PDOException $e) {
     die("DB error, try again.");
   }
@@ -448,9 +437,8 @@ function stageone() {
   print( "<html><body>" );
   if(isset($_GET['id'])) {
     try {
-      $db = new PDO(PDO_dsn, PDO_username, PDO_password);
-      $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
-      $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
+      $db = dbConnect(0, array("SET SESSION wait_timeout = 300;"));
+      $db->exec("SET SESSION wait_timeout = 28800;");
     } catch (PDOException $e) {
       die("DB error, try again.");
     }
@@ -509,13 +497,13 @@ function stageone() {
         }
       }
     }
-    $sql = "BEGIN;\n";
+    $sql = "BEGIN;";
     $sql .= "INSERT INTO page (fb_id, name, username) VALUES (".$db->quote($id).", ".$db->quote($name).", ".$db->quote($user).") ".
-      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).", `update`=NOW();\n";
+      "ON DUPLICATE KEY UPDATE fb_id=LAST_INSERT_ID(fb_id), name=".$db->quote($name).", username=".$db->quote($user).", `update`=NOW();";
     $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id, date)".
       " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0, 0".
-      ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';\n";
-    $sql .= "INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);\n";
+      ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';";
+    $sql .= "INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);";
     $sql .= "COMMIT;";
     $count = $db->exec($sql);
     if($db->errorCode() != 0) {
