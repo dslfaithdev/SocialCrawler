@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.2);
+define("VERSION", 2.3);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -40,10 +40,11 @@ while(true) {
   #Fetch new id's
   get_execution_time(true);
   try {
-    $result = json_decode(curl_get(URL, array("action" => "pull","count" => 5,"version" => VERSION)),true);
+    $r = curl_get(URL, array("action" => "pull","count" => 5,"version" => VERSION));
+    $result = json_decode($r,true);
     if($result === NULL)
-      throw new Exception("Json decode error.");
-  } catch (Exception $e) { sleep(30); continue; }
+      throw new Exception("Json decode error of: ". $r);
+  } catch (Exception $e) { print "Error fetching new posts, will sleep 5s and try again.".$e->getMessage().PHP_EOL; sleep(5); continue; }
   //Verify that we have the latest version.
   if($result['version']%10 > VERSION)
     die("You have an old version, please upgrade.".PHP_EOL);
@@ -93,16 +94,19 @@ while(true) {
   for($i=0; $i<10; $i++) {
     get_execution_time(1);
     try {
+      $out = json_encode(array('version'=> VERSION, 'd'=>$out));
+      $out = gzencode($out);
       $curl_result = curl_post(URL.'?action=push', NULL,
         array(CURLOPT_HTTPHEADER => array('Content-type: application/json'),
-          CURLOPT_POSTFIELDS => gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
+          CURLOPT_POSTFIELDS => $out //gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
         ));
-    } catch(Exception $e) { unset($e); get_execution_time(1); continue; }
-    print "--- ".trim($curl_result) ." ".get_execution_time(1)."\n";
+    } catch(Exception $e) { print "Exception catched trying to push " . $e->getMessage(); unset($e); get_execution_time(1); continue; }
+
+    print "-PUSH- ".trim($curl_result) ." ".get_execution_time(1)."\n";
     flush();ob_flush();
     if($curl_result === "Pushed to db.\n")
       break;
-    sleep(10);
+    sleep(3);
   }
   //break;
 }
@@ -111,7 +115,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
   $stime=time();
   get_execution_time(true);
   print  $page; flush();ob_flush();
-  $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time,from.fields(id)';
+  $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time,from.fields(id),comments.limit(1).summary(true),likes.limit(1).summary(true)';
   if(isset($out['until']) && $out['until'] !=0)
     $page.='&until='.$out['until'];
   $out=$out+array('seq'=>0,  'done'=>false, 'until'=>time(), 'feed'=>array());
@@ -132,7 +136,9 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
     }
     print "."; flush(); ob_flush();
     foreach($fb_data['data'] as $curr_feed) {
-      $out['feed'][$out['seq']++] = array(substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time']), $curr_feed['from']['id']);
+      isset($curr_feed['likes']) ? $likes=$curr_feed['likes']['summary']['total_count'] : $likes=0;
+      isset($curr_feed['comments']) ? $comments=$curr_feed['comments']['summary']['total_count'] : $comments=0;
+      $out['feed'][$out['seq']++] = array(substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time']), $curr_feed['from']['id'], $likes, $comments);
       //Store the oldest created_time as epoc in until (so we can resume from that stage).
       if($out['until'] > strtotime($curr_feed['created_time'])-1)
         $out['until'] = strtotime($curr_feed['created_time'])-1;
@@ -159,7 +165,7 @@ function crawl($currentPost, $facebook) {
   $out = sprintf("%s\n\n", json_encode($curr_feed));
   // el_likes handling --
   $ep_likes_page = 1;
-  $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes");
+  $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes?summary=1");
   print "L"; flush(); ob_flush();
   while($ep_likes_page) {
     if ($ep_likes) {
@@ -199,7 +205,7 @@ function crawl($currentPost, $facebook) {
 
   // ec_comments handling --
   $ec_comments_page = 1;
-  $ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost . "/comments");
+  $ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost . "/comments?fields=id,message,from,like_count,message_tags,created_time,parent&summary=true");
   print "C"; flush(); ob_flush();
   while($ec_comments_page) {
     if ($ec_comments) {
@@ -334,7 +340,8 @@ function facebook_api_wrapper($facebook, $url) {
       if (strpos($e->getMessage(), "An unknown error has occurred.") !== false)
         throw $e;
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
-        throw $e;
+        return "Error: Unsupported get request";
+        //throw $e;
       if (strpos($e->getMessage(), "(#21)") !== false) //We got a error 21 "Page ID <id> was migrated to page ID <id>."
         throw $e;
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
@@ -425,7 +432,7 @@ function curl_get($url, array $get = NULL, array $options = array()) {
     CURLOPT_URL => $url. (strpos($url, '?') === FALSE ? '?' : ''). http_build_query($get),
     CURLOPT_HEADER => 0,
     CURLOPT_RETURNTRANSFER => TRUE,
-    CURLOPT_TIMEOUT => 600
+    CURLOPT_TIMEOUT => 30
   );
 
   $ch = curl_init();
