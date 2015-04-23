@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.3);
+define("VERSION", 2.4);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -94,11 +94,11 @@ while(true) {
   for($i=0; $i<10; $i++) {
     get_execution_time(1);
     try {
-      $out = json_encode(array('version'=> VERSION, 'd'=>$out));
-      $out = gzencode($out);
+      //$JSONout = json_encode(array('version'=> VERSION, 'd'=>$out));
+      //$GZout = gzencode($JSONout);
       $curl_result = curl_post(URL.'?action=push', NULL,
         array(CURLOPT_HTTPHEADER => array('Content-type: application/json'),
-          CURLOPT_POSTFIELDS => $out //gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
+          CURLOPT_POSTFIELDS => gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
         ));
     } catch(Exception $e) { print "Exception catched trying to push " . $e->getMessage(); unset($e); get_execution_time(1); continue; }
 
@@ -262,12 +262,14 @@ function crawl($currentPost, $facebook) {
 function renewAccessToken() {
   GLOBAL $facebook, $token;
   $tokenFile = dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN";
+/* Ignore TOKEN file for now.
   if(file_exists($tokenFile)) {
     $file = fopen($tokenFile, "r+");
     $token['access_token'] = fgets($file);
     ftruncate($file,0);
     fseek($file,0);
   }
+*/
   #Renew the accessToken
   $url='https://graph.facebook.com/oauth/access_token?client_id='.APPID.
     '&client_secret='.APPSEC.
@@ -340,8 +342,8 @@ function facebook_api_wrapper($facebook, $url) {
       if (strpos($e->getMessage(), "An unknown error has occurred.") !== false)
         throw $e;
       if (strpos($e->getMessage(), "Unsupported get request") !== false)
-        return "Error: Unsupported get request";
-        //throw $e;
+      //  return "Error: Unsupported get request";
+        throw $e;
       if (strpos($e->getMessage(), "(#21)") !== false) //We got a error 21 "Page ID <id> was migrated to page ID <id>."
         throw $e;
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"

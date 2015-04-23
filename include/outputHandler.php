@@ -1,4 +1,4 @@
-<?
+<?php
 class OB_FileWriter
 {
   private $_filename;
