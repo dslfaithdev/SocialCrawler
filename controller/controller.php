@@ -1,5 +1,5 @@
 <?php
-define('VERSION', 2.3);
+define('VERSION', 2.4);
 require_once('config.php');
 include_once('include/pdoReconnect.php');
 include_once('parser.php');
@@ -72,16 +72,16 @@ function crawl_stat() {
   <link rel="stylesheet" href="html/style.css" type="text/css" id="style" media="print, projection, screen" />
 </head>
 <body>
-<?
+<?php
   if(isset($_GET['total']))
     print '<a href="'.$_SERVER["SCRIPT_NAME"].'">Current post status</a>&nbsp;';
   else
     print '<a href="'.$_SERVER["SCRIPT_NAME"].'?total">Total post status (slow)</a>&nbsp;';
 ?>
-  <a href="<?$_SERVER["SCRIPT_NAME"]?>?action=page_stat">Status of all pages (slower)</a>&nbsp;
-  <a href="<?$_SERVER["SCRIPT_NAME"]?>?action=stageone">Insert new page</a>&nbsp;
+  <a href="<?php $_SERVER["SCRIPT_NAME"]?>?action=page_stat">Status of all pages (slower)</a>&nbsp;
+  <a href="<?php $_SERVER["SCRIPT_NAME"]?>?action=stageone">Insert new page</a>&nbsp;
   <br/>
-  <?
+  <?php
   try {
     $db = dbConnect(0, array("SET profiling = 1;","SET SESSION wait_timeout = 28800;"));
   } catch (PDOException $e) {
@@ -243,7 +243,7 @@ function pull_post($count=3) {
     // Add posts to our helper, but first lock the table..
     $db->setAttribute(PDO::ATTR_TIMEOUT, "600");
     $db->exec("SET SESSION wait_timeout = 600;");
-    $sql = "SET SESSION BINLOG_FORMAT = 'MIXED'; LOCK TABLES pull_posts READ, posts WRITE;";
+    $sql = "LOCK TABLES crawling.post READ, crawling.pull_posts WRITE;";
     $db->exec($sql);
     $sql = "INSERT IGNORE INTO pull_posts ".
       "SELECT page_fb_id, post_fb_id FROM ".
@@ -538,12 +538,12 @@ function phar_put_contents($fname, $archive, $data) {
         $p = new PharData($newName.'.tar',0);
         $p->compress(Phar::GZ);
         rename($newName.'.tar.gz', dirname($newName.'.tar').'/gz/'.basename($newName).'.tar.gz');
-        rename($newName.'.tar', dirname($newName.'.tar').'/tar/'.basename($newName).'.tar');
+        unlink($newName.'.tar');
       }
-    file_put_contents('/tmp/'.$fname, $data);
-    $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /tmp ".$fname;
+    file_put_contents('/mnt/ramdisk/'.$fname, $data);
+    $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /mnt/ramdisk ".$fname;
     exec($tarCmd." 2>&1", $result, $status);
-    @unlink('/tmp/'.$fname);
+    @unlink('/mnt/ramdisk/'.$fname);
     if($status!=0)
       throw new Exception($result[0]);
     return true;

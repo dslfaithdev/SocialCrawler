@@ -1,4 +1,4 @@
-<?
+<?php
 
 function exception_error_handler($errno, $errstr, $errfile, $errline ) {
     throw new ErrorException($errstr, $errno, 0, $errfile, $errline);
@@ -91,7 +91,7 @@ function parseJsonString($string, &$table = []) {
     isSetOr($post['object_id'], 'null', true),
     isSetOr($post['status_type'],'null',true),
     isSetOr($post['source'],'null',true),
-    isSetOr($post['is_hidden'], 0),
+    isSetOr($post['is_hidden'], '0', true),
     isSetOr($post['application']['id']),
     isSetOr($post['place']['id'])
   );
@@ -254,6 +254,7 @@ function insertToDB($query, $db) {
   if(DB == "mysql") {
     //if(!$db->autocommit(FALSE))
       //die($db->error);
+    $db->set_charset("utf8");
     foreach($query as $key => $value){
       //foreach ($value as &$line)
         //$line = "(".implode(",", $line).")";
@@ -276,7 +277,7 @@ function insertToDB($query, $db) {
           //file_put_contents("insert-".$key.".sql", $sql, FILE_APPEND);
         #     print $sql;
         if(!$db->real_query($sql)) {
-          //file_put_contents("db-error.sql", $db->err);
+//          file_put_contents("db-error.sql", $db->error . PHP_EOL . $sql . PHP_EOL . PHP_EOL, FILE_APPEND | LOCK_EX);
           throw new Exception($db->error, E_WARNING);
           //die($db->error);
         }

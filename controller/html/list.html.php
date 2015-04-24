@@ -16,7 +16,7 @@ function myTime(timestamp) {
   var parts=timestamp.replace(regex,"$1 $2 $3 $4 $5 $6").split(' ');
   return new Date(Date.UTC(parts[0],parts[1]-1,parts[2],parts[3],parts[4],parts[5])).getTime()/1000;
 }
-var serverTime = <? echo time(); ?>;
+var serverTime = <?php echo time(); ?>;
 
 $(document).ready(function() {
   // call the tablesorter plugin
