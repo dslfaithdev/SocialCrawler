@@ -349,10 +349,12 @@ function facebook_api_wrapper($facebook, $url) {
       if (strpos($e->getMessage(), "(#803)") !== false) //We got a error 803 "Some of the aliases you requested do not exist"
         throw $e;
       if (strpos($e->getMessage(), "(#613)") !== false) //We got a error 613 "Calls to stream have exceeded the rate of 600 calls per 600 seconds."
-        sleep(rand(60,240));
+        sleep(rand(60,900));
+      if (strpos($e->getMessage(), "(#17)") !== false) //We got a error 17 "User request limit reached"
+        sleep(rand(60,900));
       if (strpos($e->getMessage(), "(#4)") !== false) //We got a error 4 "User request limit reached"
-        sleep(rand(60,240));
-      if ($error > 16) {
+        sleep(rand(60,900));
+      if ($error > 32) {
         sleep(600);
         $start_time += (time(1)-$t);
         throw $e;
