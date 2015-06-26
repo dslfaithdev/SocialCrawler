@@ -108,6 +108,7 @@ function parseJsonString($string, &$table = []) {
 
   //We don't care about this.
   unset($post['width'], $post['expanded_width'], $post['height'], $post['expanded_height'], $post['actions']);
+  unset($post['privacy']); //{"privacy":{"value":"","description":"","friends":"","allow":"","deny":""}}
   if(!empty($post)) {
     $missed = json_encode($post);
     $missed = '"'.$msg_id.'":'.$missed.','.PHP_EOL;
@@ -277,7 +278,7 @@ function insertToDB($query, $db) {
           //file_put_contents("insert-".$key.".sql", $sql, FILE_APPEND);
         #     print $sql;
         if(!$db->real_query($sql)) {
-//          file_put_contents("db-error.sql", $db->error . PHP_EOL . $sql . PHP_EOL . PHP_EOL, FILE_APPEND | LOCK_EX);
+          file_put_contents("db-error.sql", $db->error . PHP_EOL . $sql . PHP_EOL . PHP_EOL, FILE_APPEND | LOCK_EX);
           throw new Exception($db->error, E_WARNING);
           //die($db->error);
         }

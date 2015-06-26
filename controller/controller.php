@@ -123,6 +123,21 @@ function crawl_stat() {
 <li>  updated = Post have been updated since last crawl</li>
 <li>  removed = Post does no longer exist on Facebook</li>
 </ul>
+<hr/>
+<?php
+    print "<div style=\" display: inline-block; margin: 10px; \">";
+    print "Crawled and merged data in sincere.se". PHP_EOL;
+    print "<table class='tablesorter' style='width: 0 !important; margin: auto; margin-right: auto;'>\n";
+    print "<tr><th>Table name</th><th>Number of rows</th><th>Size in GB</th></tr>\n";
+    $query=$db->query("SELECT * from sincere.status");
+    while ($entry = $query->fetch(PDO::FETCH_NUM ))
+      if(!empty($entry[1]))
+        print "<tr><td>".$entry[0]."</td><td>".$entry[1]."</td><td>".$entry[2]."</td></tr>\n";
+    $exec_time_row = $db->query("SELECT query_id, SUM(duration) FROM information_schema.profiling GROUP BY query_id ORDER BY query_id DESC LIMIT 1;")
+      ->fetch(PDO::FETCH_NUM);
+    print "</table>Exec time: ".$exec_time_row[1]."</div>";
+    ob_flush();flush();
+  ?>
 </body></html>
 <?
 }
@@ -243,7 +258,8 @@ function pull_post($count=3) {
     // Add posts to our helper, but first lock the table..
     $db->setAttribute(PDO::ATTR_TIMEOUT, "600");
     $db->exec("SET SESSION wait_timeout = 600;");
-    $sql = "LOCK TABLES crawling.post READ, crawling.pull_posts WRITE;";
+    $sql = "SET SESSION BINLOG_FORMAT = 'MIXED'; LOCK TABLES pull_posts READ, posts WRITE;";
+    $sql = " LOCK TABLES crawling.post READ, crawling.pull_posts WRITE;";
     $db->exec($sql);
     $sql = "INSERT IGNORE INTO pull_posts ".
       "SELECT page_fb_id, post_fb_id FROM ".
@@ -312,6 +328,8 @@ function pull_post($count=3) {
 function my_push() {
   $rawData = gzinflate(substr(file_get_contents('php://input'),10,-8));
   $postedJson = json_decode($rawData,true);
+  if(json_last_error() != JSON_ERROR_NONE)
+    error_log('Last JSON error: '. json_last_error(). json_last_error_msg() . PHP_EOL. PHP_EOL,0);
 
   try {
     $dbPDO = dbConnect(0, array("SET SESSION wait_timeout = 300;"));
