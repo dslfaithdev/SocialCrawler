@@ -2,6 +2,8 @@ config/config.php
 outputs/*
 log/*
 *.log
+*.json
+TOKEN
 controller/phar/*
 controller/config.php
 
