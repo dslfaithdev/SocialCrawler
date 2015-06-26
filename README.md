@@ -6,6 +6,12 @@ Fredrik Erlandsson, fredrik.erlandsson@bth.se
 
 This crawler consists of two parts, the _agent.php_ that does the actual crawling 
 and a controller (found in _contoller/_) keeping track of the current crawling status.
+ 
+______________________________________________________________________________________
+### Install ###
+The agent is dependent on the Facebook PHP SDK. To install just do a submodule update:
+
+`git submodule update --init`
 
 ______________________________________________________________________________________
 ### Configuration ###
