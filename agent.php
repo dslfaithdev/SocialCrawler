@@ -19,12 +19,6 @@ $facebook = new Facebook(array(
     'secret' => APPSEC,
 ));
 
-//Parse command line arguments as GET variables
-parse_str(implode('&', array_slice($argv, 1)), $_GET);
-if(!isset($_GET['token']))
-  print "No token provided, will try to read from the file: ".dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN instead.".PHP_EOL;
-else
-  $token['access_token'] = $_GET['token'];
 renewAccessToken();
 # Registering shutdown function to redirect users.
 register_shutdown_function('fatalErrorHandler');
@@ -260,38 +254,15 @@ function crawl($currentPost, $facebook) {
 }
 
 function renewAccessToken() {
+	#Modified by Phuong "Fan" Pham
+	
   GLOBAL $facebook, $token;
-  $tokenFile = dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN";
-/* Ignore TOKEN file for now.
-  if(file_exists($tokenFile)) {
-    $file = fopen($tokenFile, "r+");
-    $token['access_token'] = fgets($file);
-    ftruncate($file,0);
-    fseek($file,0);
-  }
-*/
-  #Renew the accessToken
-  $url='https://graph.facebook.com/oauth/access_token?client_id='.APPID.
-    '&client_secret='.APPSEC.
-    '&grant_type=fb_exchange_token&fb_exchange_token='.$token['access_token'];
-  try {
-    $ret = curl_get($url, array());
-  } catch (Exception $e) {
-    die("Old access token (visit: https://developers.facebook.com/tools/explorer/".APPID." and generate a token)\n");
-  }
-  if(strpos($ret, '"type":"OAuthException"') !== false)
-    die("Old access token (visit: https://developers.facebook.com/tools/explorer/".APPID." and generate a token)\n");
-  parse_str($ret, $token);
-
-  $facebook->setAccessToken($token['access_token']);
-  $token['expire_time'] = $token['expires']+time();
+#We don't need to obtain access_token, concating appid and app_sec is equivalent
+  $facebook->setAccessToken(APPID.'|'.APPSEC)  
+  $token['expire_time'] = 99*365*24*60*60 +time();
   print "New token: " . $token['access_token'];
   print "\nToken expires in ". ($token['expire_time'] - time()) ." secs <br/>\n\n";
-  flush();
-  if(!isset($file))
-    $file = fopen($tokenFile,"w+");
-  fwrite($file,$token['access_token'].PHP_EOL);
-  fclose($file);
+  flush(); 
 }
 
 /**
