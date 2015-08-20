@@ -258,8 +258,8 @@ function renewAccessToken() {
 	
   GLOBAL $facebook, $token;
 #We don't need to obtain access_token, concating appid and app_sec is equivalent
-	$token['access_token']=(APPID.'|'.APPSEC)
-  $facebook->setAccessToken($token['access_token'])  
+	$token['access_token']=(APPID.'|'.APPSEC);
+  $facebook->setAccessToken($token['access_token']);
   $token['expire_time'] = 99*365*24*60*60 +time();
   print "New token: " . $token['access_token'];
   print "\nToken expires in ". ($token['expire_time'] - time()) ." secs <br/>\n\n";
