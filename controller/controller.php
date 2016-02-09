@@ -370,7 +370,7 @@ function my_push() {
       continue;
     }
     //Make sure that we already have the posts file in the DB.
-   $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'_',page_fb_id,'_',post_fb_id,'.json')".
+   $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'_',page_fb_id,'_',post_fb_id)".
       " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$dbPDO->quote(strstr($post['id'],'_',true)).
       " AND post_fb_id=".$dbPDO->quote(substr(strstr($post['id'],'_'),1));
     $result = $dbPDO->query($sql);
@@ -380,7 +380,7 @@ function my_push() {
       $lock = $dbPDO->query("SELECT GET_LOCK(".$dbPDO->quote($archive).", 30);")->fetchAll()[0][0];
       if($lock != 1) //Unable to get lock.
         die("Unable to get lock for: " . $archive);
-      if(!phar_put_contents($row['fname'], $archive, $post['data']))
+      if(!phar_put_contents($row['fname'].'#'.microtime(true).'.json', $archive, $post['data']))
         die("Unable to write the file: " . $row['fname']);
         //continue; //We did not manage to write to our phar archive, try with next post.
 
@@ -552,11 +552,14 @@ function phar_put_contents($fname, $archive, $data) {
         $newName = $archive.'-'.time();
         //Move archive to archive-EPOC.tar
         rename($archive.'.tar', $newName.'.tar');
+/*
         //Compress.
         $p = new PharData($newName.'.tar',0);
         $p->compress(Phar::GZ);
         rename($newName.'.tar.gz', dirname($newName.'.tar').'/gz/'.basename($newName).'.tar.gz');
         unlink($newName.'.tar');
+*/
+        rename($newName.'.tar', dirname($newName.'.tar').'/tar/'.basename($newName).'.tar');
       }
     file_put_contents('/mnt/ramdisk/'.$fname, $data);
     $tarCmd = "tar ". (file_exists($archive.".tar") ? "-rf ":"-cf ") .$archive.".tar  -C /mnt/ramdisk ".$fname;
