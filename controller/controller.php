@@ -1,14 +1,47 @@
 <?php
-define('VERSION', 2.4);
+define('VERSION', 2.5);
 require_once('config.php');
 include_once('include/pdoReconnect.php');
 include_once('parser.php');
+
+require 'vendor/autoload.php';
+use TheIconic\Tracking\GoogleAnalytics\Analytics;
+
+function gAnalytics($path = "") {
+  $headers = apache_request_headers();
+  if($headers && isset($headers['From'])) {
+    $from = md5($headers['From'] . $_SERVER["REMOTE_ADDR"]);
+  } else
+    $from = md5($_SERVER["REMOTE_ADDR"] . ':' . $_SERVER["REMOTE_PORT"]);
+
+  // Instantiate the Analytics object
+  // optionally pass TRUE in the constructor if you want to connect using HTTPS
+  $analytics = new Analytics(false);
+  $analytics
+    ->setAsyncRequest(true)
+    ->setProtocolVersion('1')
+    ->setClientId($from)
+    ->setDocumentPath($path)
+    ->setDocumentHostName($_SERVER["HTTP_HOST"])
+    ->setIpOverride($_SERVER["REMOTE_ADDR"]);
+
+  if(defined('TRACKING_ID'))
+    $analytics
+    ->setTrackingId(TRACKING_ID);
+  return $analytics;
+}
+
 
 if(isset($_GET['action']))
   $action = $_GET['action'];
 else
   $action='';
 
+if(defined('TRACKING_ID')) {
+  gAnalytics($action)
+    ->sendPageview();
+}
+$startTime = microtime(true);
 switch ($action) {
 case 'add':
   checkout();
@@ -30,6 +63,12 @@ case 'prioritize':
   break;
 default:
   crawl_stat();
+}
+
+if(defined('TRACKING_ID')) {
+  gAnalytics($action)
+    ->setPageLoadTime((microtime(true)-$startTime)/1000)
+    ->sendTiming();
 }
 
 function prioritize() {
@@ -71,6 +110,16 @@ function crawl_stat() {
   <title>Crawling status </title>
   <link rel="stylesheet" href="html/style.css" type="text/css" id="style" media="print, projection, screen" />
 </head>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', <?php print "'" . TRACKING_ID ."'" ?>, 'auto');
+  ga('send', 'pageview');
+
+</script>
 <body>
 <?php
   if(isset($_GET['total']))
@@ -344,6 +393,12 @@ function my_push() {
 //    print "working with ". $post['id'] .PHP_EOL; flush();
     if($post['type'] == "page") { //Is it a stage one crawl.
       update_page($post['id'], $post['exec_time'], $post['data']);
+      if(defined('TRACKING_ID')) {
+	gAnalytics("push")
+	  ->setEventCategory('Push')
+	  ->setEventAction('page_update')
+	  ->sendEvent();
+      }
       continue;
     }
     if($post['status'] != "done") { //For some reason the agent did not complete, switch trough error messages and try to react.
@@ -359,6 +414,12 @@ function my_push() {
           " WHERE page_fb_id = ".$dbPDO->quote(strstr($post['id'],'_',true))." AND ".
           " post_fb_id= ".$dbPDO->quote(substr(strstr($post['id'],'_'),1)) ."; ";
         $result = $dbPDO->exec($sql);
+	if(defined('TRACKING_ID')) {
+	  gAnalytics("push")
+	    ->setEventCategory('Push')
+	    ->setEventAction('removed')
+	    ->sendEvent();
+	}
         //if($query != 1)
           //die("DB error, try again.");
           continue;
@@ -367,6 +428,12 @@ function my_push() {
       $sql="INSERT IGNORE INTO pull_posts VALUES (".$dbPDO->quote(strstr($post['id'],'_',true)).",".
         (($post['type']== "page") ? "0" :  $dbPDO->quote(substr(strstr($post['id'],'_'),1))).");";
       $result = $dbPDO->exec($sql);
+      if(defined('TRACKING_ID')) {
+	gAnalytics("push")
+	  ->setEventCategory('Push')
+	  ->setEventAction('recrawl')
+	  ->sendEvent();
+      }
       continue;
     }
     //Make sure that we already have the posts file in the DB.
@@ -393,7 +460,12 @@ function my_push() {
       $query = $dbPDO->exec($sql);
       if($query != 1)
         die("DB error, try again.");
-
+      if(defined('TRACKING_ID')) {
+	gAnalytics("push")
+	  ->setEventCategory('Push')
+	  ->setEventAction('done')
+	  ->sendEvent();
+      }
       /*
        * Insert into db
        */
@@ -407,9 +479,20 @@ function my_push() {
         insertToDB(parseJsonString($post['data']), $db);
         $db->close();
       } catch (Exception $e) {
+	if(defined('TRACKING_ID')) {
+	  gAnalytics("push")
+	    ->setExceptionDescription("Parse Error: " . $e->getMessage())
+	    ->sendException();
+	}
         error_log("Parse Error (".($post['id']).") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
       }
     } else {
+      if(defined('TRACKING_ID')) {
+	gAnalytics("push")
+	  ->setEventCategory('Push')
+	  ->setEventAction('invalid post_id')
+	  ->sendEvent();
+      }
       die("No post with id $post_id in db");
     }
   }

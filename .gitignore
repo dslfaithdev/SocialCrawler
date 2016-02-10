@@ -6,4 +6,7 @@ log/*
 TOKEN
 controller/phar/*
 controller/config.php
+controller/composer.lock
+controller/vendor/**
+!controller/composer.json
 

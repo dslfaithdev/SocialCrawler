@@ -13,4 +13,5 @@ ini_set('error_log','logFile.log');
 //define('PDO_username','');
 //define('PDO_password', '');
 
+//define('TRACKING_ID', '');
 ?>

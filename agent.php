@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.4);
+define("VERSION", 2.5);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -414,6 +414,10 @@ function curl_post($url, array $post = NULL, array $options = array()) {
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
+  try {
+    $whoami = posix_getpwuid(posix_getuid())['name'] . "." . posix_getpid();
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
+  } catch(Exception $e) {}
   if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
@@ -442,6 +446,10 @@ function curl_get($url, array $get = NULL, array $options = array()) {
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
   curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
+  try {
+    $whoami = posix_getpwuid(posix_getuid())['name'] . "." . posix_getpid();
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
+  } catch(Exception $e) {}
   if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
