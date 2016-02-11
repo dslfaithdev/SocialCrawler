@@ -1,5 +1,5 @@
 <?php
-define('VERSION', 2.5);
+define('VERSION', 2.6);
 require_once('config.php');
 include_once('include/pdoReconnect.php');
 include_once('parser.php');
@@ -14,6 +14,10 @@ function gAnalytics($path = "") {
   } else
     $from = md5($_SERVER["REMOTE_ADDR"] . ':' . $_SERVER["REMOTE_PORT"]);
 
+  $version = "";
+  if(isset($_SERVER['HTTP_USER_AGENT'])) {
+    $version = substr(strstr($_SERVER['HTTP_USER_AGENT'],' '),1);
+  }
   // Instantiate the Analytics object
   // optionally pass TRUE in the constructor if you want to connect using HTTPS
   $analytics = new Analytics(false);
@@ -22,6 +26,8 @@ function gAnalytics($path = "") {
     ->setProtocolVersion('1')
     ->setClientId($from)
     ->setDocumentPath($path)
+    ->setApplicationName("SocialCrawler" . VERSION)
+    ->setApplicationVersion($version)
     ->setDocumentHostName($_SERVER["HTTP_HOST"])
     ->setIpOverride($_SERVER["REMOTE_ADDR"]);
 
@@ -318,6 +324,10 @@ function pull_post($count=3) {
       "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.  86400 == 24h
     $db->exec($sql);
     $db->exec("UNLOCK TABLES;");
+    gAnalytics("pull_post")
+      ->setEventCategory('Pull')
+      ->setEventAction('add new posts')
+      ->sendEvent();
   }
   for($i=0;$i<5;$i++) { //This should be a mysql procedure.
     $db->exec("SET SESSION BINLOG_FORMAT = 'MIXED'; START TRANSACTION");
@@ -370,8 +380,12 @@ function pull_post($count=3) {
     die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
     //die(json_encode(array('status'=>'db error')+$ret));
   #print_r($ret);
-
-  die(json_encode(array('posts'=>$posts)+$ret));
+  gAnalytics("pull_post")
+    ->setEventCategory('Pull')
+    ->setEventAction('pulled posts')
+    ->setEventValue(count($posts))
+    ->sendEvent();
+  print json_encode(array('posts'=>$posts)+$ret);
 }
 
 function my_push() {

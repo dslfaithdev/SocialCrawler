@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.5);
+define("VERSION", 2.6);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -418,6 +418,7 @@ function curl_post($url, array $post = NULL, array $options = array()) {
     $whoami = posix_getpwuid(posix_getuid())['name'] . "." . posix_getpid();
     curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
   } catch(Exception $e) {}
+  curl_setopt($ch,CURLOPT_USERAGENT,'SocalCrawler/'.VERSION.' Agent/'.VERSION);
   if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
@@ -450,6 +451,7 @@ function curl_get($url, array $get = NULL, array $options = array()) {
     $whoami = posix_getpwuid(posix_getuid())['name'] . "." . posix_getpid();
     curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
   } catch(Exception $e) {}
+  curl_setopt($ch,CURLOPT_USERAGENT,'SocalCrawler/'.VERSION.' Agent/'.VERSION);
   if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
