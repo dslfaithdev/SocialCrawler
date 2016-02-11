@@ -194,7 +194,7 @@ function crawl_stat() {
     ob_flush();flush();
   ?>
 </body></html>
-<?
+<?php
 }
 #Checkout file, add to db.
 function checkout() {
@@ -408,17 +408,17 @@ function my_push() {
     if($post['type'] == "page") { //Is it a stage one crawl.
       update_page($post['id'], $post['exec_time'], $post['data']);
       if(defined('TRACKING_ID')) {
-	gAnalytics("push")
-	  ->setEventCategory('Push')
-	  ->setEventAction('page_update')
-	  ->sendEvent();
+        gAnalytics("push")
+          ->setEventCategory('Push')
+          ->setEventAction('page_update')
+          ->sendEvent();
       }
       continue;
     }
     if($post['status'] != "done") { //For some reason the agent did not complete, switch trough error messages and try to react.
       if(isset($post['error_msg'])) {
-      if(strpos($post['error_msg'], "(#21)") !== false) { //We got a error 21 "Page ID <old> was migrated to page ID <new>"
-        continue;
+        if(strpos($post['error_msg'], "(#21)") !== false) { //We got a error 21 "Page ID <old> was migrated to page ID <new>"
+          continue;
       }
       if(strpos($post['error_msg'], "Unsupported get request") !== false) { //We got a error 21 "Page ID <old> was migrated to page ID <new>"
         $sql = "UPDATE post SET status = 'removed'".
@@ -428,14 +428,14 @@ function my_push() {
           " WHERE page_fb_id = ".$dbPDO->quote(strstr($post['id'],'_',true))." AND ".
           " post_fb_id= ".$dbPDO->quote(substr(strstr($post['id'],'_'),1)) ."; ";
         $result = $dbPDO->exec($sql);
-	if(defined('TRACKING_ID')) {
-	  gAnalytics("push")
-	    ->setEventCategory('Push')
-	    ->setEventAction('removed')
-	    ->sendEvent();
-	}
+        if(defined('TRACKING_ID')) {
+          gAnalytics("push")
+            ->setEventCategory('Push')
+            ->setEventAction('removed')
+            ->sendEvent();
+  }
         //if($query != 1)
-          //die("DB error, try again.");
+        //die("DB error, try again.");
           continue;
       }
       }
@@ -443,17 +443,17 @@ function my_push() {
         (($post['type']== "page") ? "0" :  $dbPDO->quote(substr(strstr($post['id'],'_'),1))).");";
       $result = $dbPDO->exec($sql);
       if(defined('TRACKING_ID')) {
-	gAnalytics("push")
-	  ->setEventCategory('Push')
-	  ->setEventAction('recrawl')
-	  ->sendEvent();
+        gAnalytics("push")
+          ->setEventCategory('Push')
+          ->setEventAction('recrawl')
+          ->sendEvent();
       }
       continue;
     }
     //Make sure that we already have the posts file in the DB.
    $sql="SELECT page_fb_id, post_fb_id, CONCAT(page_fb_id , '_' , DATE_FORMAT(date,'%Y-%m-%dT%H'),'_',page_fb_id,'_',post_fb_id)".
-      " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$dbPDO->quote(strstr($post['id'],'_',true)).
-      " AND post_fb_id=".$dbPDO->quote(substr(strstr($post['id'],'_'),1));
+     " AS fname, REPLACE(name,' ','_') AS archive, fb_id FROM post,page WHERE page_fb_id=fb_id AND page_fb_id=".$dbPDO->quote(strstr($post['id'],'_',true)).
+     " AND post_fb_id=".$dbPDO->quote(substr(strstr($post['id'],'_'),1));
     $result = $dbPDO->query($sql);
     if(($row=$result->fetchAll()[0])) {
       $archive = realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'];
@@ -461,9 +461,12 @@ function my_push() {
       $lock = $dbPDO->query("SELECT GET_LOCK(".$dbPDO->quote($archive).", 30);")->fetchAll()[0][0];
       if($lock != 1) //Unable to get lock.
         die("Unable to get lock for: " . $archive);
-      if(!phar_put_contents($row['fname'].'#'.microtime(true).'.json', $archive, $post['data']))
+      $fname = $row['fname'].'#'.microtime(true).'.json';
+      if(!phar_put_contents($fname, $archive, $post['data'])) {
+        error_log("Unable to write the file: " . $fname);
         die("Unable to write the file: " . $row['fname']);
         //continue; //We did not manage to write to our phar archive, try with next post.
+      }
 
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$dbPDO->quote($_SERVER["REMOTE_ADDR"]).") ".
@@ -475,10 +478,10 @@ function my_push() {
       if($query != 1)
         die("DB error, try again.");
       if(defined('TRACKING_ID')) {
-	gAnalytics("push")
-	  ->setEventCategory('Push')
-	  ->setEventAction('done')
-	  ->sendEvent();
+        gAnalytics("push")
+          ->setEventCategory('Push')
+          ->setEventAction('done')
+          ->sendEvent();
       }
       /*
        * Insert into db
@@ -493,19 +496,20 @@ function my_push() {
         insertToDB(parseJsonString($post['data']), $db);
         $db->close();
       } catch (Exception $e) {
-	if(defined('TRACKING_ID')) {
-	  gAnalytics("push")
-	    ->setExceptionDescription("Parse Error: " . $e->getMessage())
-	    ->sendException();
-	}
-        error_log("Parse Error (".($post['id']).") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+        if(defined('TRACKING_ID')) {
+          gAnalytics("push")
+            ->setExceptionDescription("Parse Error: " . $e->getMessage())
+            ->sendException();
+  }
+  error_log("Parse Error (".($post['id']).") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+  file_put_contents("parseIssues.csv", $archive . "," . $fname . "," . $e->getMessage() . PHP_EOL, FILE_APPEND);
       }
     } else {
       if(defined('TRACKING_ID')) {
-	gAnalytics("push")
-	  ->setEventCategory('Push')
-	  ->setEventAction('invalid post_id')
-	  ->sendEvent();
+        gAnalytics("push")
+          ->setEventCategory('Push')
+          ->setEventAction('invalid post_id')
+          ->sendEvent();
       }
       die("No post with id $post_id in db");
     }
@@ -648,7 +652,7 @@ function phar_put_contents($fname, $archive, $data) {
       filesize($archive.'.tar')+strlen($data) > 120*1024*1024) { //Archive is bigger than 120M
         $newName = $archive.'-'.time();
         //Move archive to archive-EPOC.tar
-        rename($archive.'.tar', $newName.'.tar');
+    rename($archive.'.tar', $newName.'.tar');
 /*
         //Compress.
         $p = new PharData($newName.'.tar',0);
