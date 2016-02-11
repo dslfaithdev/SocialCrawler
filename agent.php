@@ -56,6 +56,7 @@ while(true) {
   $posts=$result['posts'];
   print "\n+++ Pulled " .count($posts)." post(s) ".get_execution_time(1)."\n";
   flush();ob_flush();
+  $start_crawl_time = microtime(true);
   foreach($posts as $currentPost) {
     if($currentPost == "0")
       continue;
@@ -89,8 +90,17 @@ while(true) {
     $out[$currentPost['id']]['exec_time'] = microtime(true)-$start_time;
     $out[$currentPost['id']]['data'] = $data;
     //file_put_contents('outputs/'.$currentPost['id'], json_encode($out[$currentPost['id']]));
+    if(microtime(true)-$start_crawl_time > 60) {
+      pushData($out);
+      $out = array();
+      $start_crawl_time = microtime(true);
+    }
   }
+  pushData($out);
+}
+
   //Push changes
+function pushData(&$out) {
   for($i=0; $i<10; $i++) {
     get_execution_time(1);
     try {
@@ -105,10 +115,13 @@ while(true) {
     print "-PUSH- ".trim($curl_result) ." ".get_execution_time(1)."\n";
     flush();ob_flush();
     if($curl_result === "Pushed to db.\n")
-      break;
+      return;
     sleep(3);
   }
-  //break;
+  // Could not push data, save locally.
+  foreach( $out as &$post ){
+    file_put_contents('outputs/'. $post['id'] . '#'. microtime(true) . '.raw.json', json_encode($post));
+  }
 }
 
 function fb_page_extract($page, $facebook, array &$out = array()) {
