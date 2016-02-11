@@ -192,6 +192,19 @@ function crawl_stat() {
       ->fetch(PDO::FETCH_NUM);
     print "</table>Exec time: ".$exec_time_row[1]."</div>";
     ob_flush();flush();
+
+    print "<div style=\" display: inline-block; margin: 10px; \">";
+    print "Crawled and parsed data. ". PHP_EOL;
+    print "<table class='tablesorter' style='width: 0 !important; margin: auto; margin-right: auto;'>\n";
+    print "<tr><th style='background-color: #99e6bf;'>Table name</th><th style='background-color: #99e6bf;'>Number of rows</th><th style='background-color: #99e6bf;'>Size in GB</th></tr>\n";
+    $query=$db->query("SELECT * from crawled_.status where `Table Name` not like  '%\_' and `Table Name` not like  '%\_bak'");
+    while ($entry = $query->fetch(PDO::FETCH_NUM ))
+      if(!empty($entry[1]))
+        print "<tr><td>".$entry[0]."</td><td>".$entry[1]."</td><td>".$entry[2]."</td></tr>\n";
+    $exec_time_row = $db->query("SELECT query_id, SUM(duration) FROM information_schema.profiling GROUP BY query_id ORDER BY query_id DESC LIMIT 1;")
+      ->fetch(PDO::FETCH_NUM);
+    print "</table>Exec time: ".$exec_time_row[1]."</div>";
+    ob_flush();flush();
   ?>
 </body></html>
 <?php
