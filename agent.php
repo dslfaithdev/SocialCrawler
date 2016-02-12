@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.6);
+define("VERSION", 2.7);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -101,13 +101,15 @@ while(true) {
 
   //Push changes
 function pushData(&$out) {
+  if(count($out) == 0)
+    return;
   for($i=0; $i<10; $i++) {
     get_execution_time(1);
     try {
       //$JSONout = json_encode(array('version'=> VERSION, 'd'=>$out));
       //$GZout = gzencode($JSONout);
       $curl_result = curl_post(URL.'?action=push', NULL,
-        array(CURLOPT_HTTPHEADER => array('Content-type: application/json'),
+        array(CURLOPT_HTTPHEADER => array("Content-Encoding: gzip", 'Content-Type: application/json'),
           CURLOPT_POSTFIELDS => gzencode(json_encode(array('version'=> VERSION, 'd'=>$out)))
         ));
     } catch(Exception $e) { print "Exception catched trying to push " . $e->getMessage(); unset($e); get_execution_time(1); continue; }
@@ -426,12 +428,15 @@ function curl_post($url, array $post = NULL, array $options = array()) {
 
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
-  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
   try {
     $whoami = posix_getpwuid(posix_getuid())['name'] . "." . posix_getpid();
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
+    if(isset($options[CURLOPT_HTTPHEADER])) {
+      $options[CURLOPT_HTTPHEADER][] = "From: $whoami";
+      curl_setopt($ch, CURLOPT_HTTPHEADER, $options[CURLOPT_HTTPHEADER]);
+    } else
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
   } catch(Exception $e) {}
-  curl_setopt($ch,CURLOPT_USERAGENT,'SocalCrawler/'.VERSION.' Agent/'.VERSION);
+  curl_setopt($ch, CURLOPT_USERAGENT,'SocalCrawler/'.VERSION.' Agent/'.VERSION);
   if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
@@ -459,12 +464,15 @@ function curl_get($url, array $get = NULL, array $options = array()) {
 
   $ch = curl_init();
   curl_setopt_array($ch, ($options + $defaults));
-  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:'));
   try {
     $whoami = posix_getpwuid(posix_getuid())['name'] . "." . posix_getpid();
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
+    if(isset($options[CURLOPT_HTTPHEADER])) {
+      $options[CURLOPT_HTTPHEADER][] = "From: $whoami";
+      curl_setopt($ch, CURLOPT_HTTPHEADER, $options[CURLOPT_HTTPHEADER]);
+    } else
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array('From:' . $whoami));
   } catch(Exception $e) {}
-  curl_setopt($ch,CURLOPT_USERAGENT,'SocalCrawler/'.VERSION.' Agent/'.VERSION);
+  curl_setopt($ch, CURLOPT_USERAGENT,'SocalCrawler/'.VERSION.' Agent/'.VERSION);
   if(($result = curl_exec($ch)) === false) {
     throw new Exception(curl_error($ch) . "\n $url");
   }
