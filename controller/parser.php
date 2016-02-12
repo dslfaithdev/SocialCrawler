@@ -20,14 +20,16 @@ function parseJsonString($string, &$table = []) {
   $post_id = substr(strstr($post['id'],'_'),1);
 
   // Handle users found in $post[from/to]
-  $users[]=$post['from'];
-  if( isset($post['to'] ))
-    $users=array_merge((array)$users, (array)$post['to']['data']);
-  foreach($users as $user) {
-    if( isset($user['category'])) {
-      $table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'],'null',true), my_escape($user['category']) ];
-    } else {
-      $table['fb_user'][$user['id']] = [ isSetOr($user['id'], 0), isSetOr($user['name'],'null',true), "null" ];
+  if( isset($post['from']) ) {
+    $users[]=$post['from'];
+    if( isset($post['to'] ))
+      $users=array_merge((array)$users, (array)$post['to']['data']);
+    foreach($users as $user) {
+      if( isset($user['category'])) {
+	$table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'],'null',true), my_escape($user['category']) ];
+      } else {
+	$table['fb_user'][$user['id']] = [ isSetOr($user['id'], 0), isSetOr($user['name'],'null',true), "null" ];
+      }
     }
   }
 
@@ -260,7 +262,7 @@ function insertToDB($query, $db) {
       //foreach ($value as &$line)
         //$line = "(".implode(",", $line).")";
       //while(count($value)) {
-      $arr = array_chunk($value, 250000);
+      $arr = array_chunk($value, 2500);
       unset($value);
       foreach($arr as $v) {
         foreach ($v as &$line) {
@@ -278,7 +280,7 @@ function insertToDB($query, $db) {
           //file_put_contents("insert-".$key.".sql", $sql, FILE_APPEND);
         #     print $sql;
         if(!$db->real_query($sql)) {
-          file_put_contents("db-error.sql", $db->error . PHP_EOL . $sql . PHP_EOL . PHP_EOL, FILE_APPEND | LOCK_EX);
+          file_put_contents("db-error.sql", ";" . $db->error . PHP_EOL . $sql . PHP_EOL, FILE_APPEND | LOCK_EX);
           throw new Exception($db->error, E_WARNING);
           //die($db->error);
         }
