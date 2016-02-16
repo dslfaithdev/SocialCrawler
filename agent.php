@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.7);
+define("VERSION", 2.8);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -180,7 +180,7 @@ function crawl($currentPost, $facebook) {
   $out = sprintf("%s\n\n", json_encode($curr_feed));
   // el_likes handling --
   $ep_likes_page = 1;
-  $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes?summary=1");
+  $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes?summary=1&fields=name,profile_type");
   print "L"; flush(); ob_flush();
   while($ep_likes_page) {
     if ($ep_likes) {
@@ -236,7 +236,7 @@ function crawl($currentPost, $facebook) {
           $out .= "{\"ec_likes\":{\"data\":[]}}\n\n";
           continue;
         }
-        $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes");
+        $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes?summary=1&fields=name,profile_type");
         $old_url="";
         print "l"; flush(); ob_flush();
         while($ec_likes) {
