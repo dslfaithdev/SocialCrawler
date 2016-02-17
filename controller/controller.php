@@ -1,5 +1,5 @@
 <?php
-define('VERSION', 2.6);
+define('VERSION', 2.8);
 require_once('config.php');
 include_once('include/pdoReconnect.php');
 include_once('parser.php');
@@ -9,6 +9,7 @@ use TheIconic\Tracking\GoogleAnalytics\Analytics;
 
 function gAnalytics($path = "") {
   $headers = apache_request_headers();
+  $from = "";
   if($headers && isset($headers['From'])) {
     $from = md5($headers['From'] . $_SERVER["REMOTE_ADDR"]);
   } else
@@ -334,7 +335,7 @@ function pull_post($count=3) {
       "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
       "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
       "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
-      "ORDER BY ts) AS tmp LIMIT 500;"; #14400 == 4h.  86400 == 24h
+      "ORDER BY ts) AS tmp LIMIT 1500;"; #14400 == 4h.  86400 == 24h
     $db->exec($sql);
     $db->exec("UNLOCK TABLES;");
     gAnalytics("pull_post")
@@ -342,23 +343,21 @@ function pull_post($count=3) {
       ->setEventAction('add new posts')
       ->sendEvent();
   }
-  for($i=0;$i<5;$i++) { //This should be a mysql procedure.
-    $db->exec("SET SESSION BINLOG_FORMAT = 'MIXED'; START TRANSACTION");
-    $sql = "SELECT page_fb_id, post_fb_id FROM pull_posts LIMIT ".intval($count);
-    try { $result = $db->query($sql);
-    } catch (PDOException $e) { die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret)); }
-    if($result->rowCount() == 0)
+  try {
+    $db->exec("SET @WHO = " . $db->quote($_SERVER["REMOTE_ADDR"]));
+    $sql = "DELETE FROM pull_posts LIMIT " . intval($count);
+    if ($db->exec($sql) == 0)
       die(json_encode(array('status'=>'no new posts')+$ret));
-    $rows=$result->fetchAll();
-    $result->closeCursor();
-    $posts = array();
-    $sql ="";
-    foreach ($rows as $row){
-      $sql .= "UPDATE post SET status = 'pulled', ".
-        "time_stamp = UNIX_TIMESTAMP(), ".
-        "who = INET_ATON(".$db->quote($_SERVER["REMOTE_ADDR"]). ") ".
-        " WHERE page_fb_id = '".$row['page_fb_id']."' AND post_fb_id = '".$row['post_fb_id']."'; ".
-        "DELETE FROM pull_posts WHERE post_fb_id =  ".$row['post_fb_id']." AND page_fb_id= ".$row['page_fb_id'].";";
+    $sql = "SELECT @deletedIDs;";
+    $result = $db->query($sql);
+  } catch (Exception $e) { die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret)); }
+  $rows=$result->fetch();
+  $result->closeCursor();
+  $posts = array();
+  foreach (explode(";" , $rows[0]) as $r){
+    $r = explode(",", $r);
+    $row['page_fb_id'] = $r[0];
+    $row['post_fb_id'] = $r[1];
       if($row['post_fb_id'] == 0) { //It's a page
         $s="SELECT seq, UNIX_TIMESTAMP(date) AS until FROM post ".
         " WHERE page_fb_id=".$row['page_fb_id']." AND post_fb_id=0";//.$row['post_fb_id'];
@@ -377,22 +376,9 @@ function pull_post($count=3) {
       } else {
         $posts[] = array('id' => $row['page_fb_id'].'_'.$row['post_fb_id'], 'type' => 'post');
       }
-    }
-    try {
-      $result = $db->exec($sql);
-      $db->query("COMMIT");
-    } catch (Exception $e) {
-      die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
-    }
-    if ($result !== 0 && count($posts) !== 0)
-      break;
   }
   if(count($posts) == 0)
     die(json_encode(array('status'=>'no new posts')+$ret));
-  if($result == 0)
-    die(json_encode(array('status'=>'db error, '. $e->getMessage())+$ret));
-    //die(json_encode(array('status'=>'db error')+$ret));
-  #print_r($ret);
   gAnalytics("pull_post")
     ->setEventCategory('Pull')
     ->setEventAction('pulled posts')
@@ -402,7 +388,14 @@ function pull_post($count=3) {
 }
 
 function my_push() {
-  $rawData = gzinflate(substr(file_get_contents('php://input'),10,-8));
+  $rawData = "";
+  try {
+    $rawData = gzinflate(substr(file_get_contents('php://input'),10,-8));
+  } catch (Exception $e) {
+    error_log('gzinflate error'. $e->getMessage() . PHP_EOL, 0);
+    file_put_contents("brokenInput.gz", file_get_contents('php://input'));
+    return;
+  }
   $postedJson = json_decode($rawData,true);
   if(json_last_error() != JSON_ERROR_NONE)
     error_log('Last JSON error: '. json_last_error(). json_last_error_msg() . PHP_EOL. PHP_EOL,0);
@@ -417,7 +410,6 @@ function my_push() {
       die("Wrong parameters");
     if(!is_numeric($post['exec_time']))
       die("Wrong parameters");
-//    print "working with ". $post['id'] .PHP_EOL; flush();
     if($post['type'] == "page") { //Is it a stage one crawl.
       update_page($post['id'], $post['exec_time'], $post['data']);
       if(defined('TRACKING_ID')) {
