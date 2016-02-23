@@ -475,6 +475,7 @@ function my_push() {
         die("Unable to write the file: " . $row['fname']);
         //continue; //We did not manage to write to our phar archive, try with next post.
       }
+      $lock = $dbPDO->query("SELECT RELEASE_LOCK(".$dbPDO->quote($archive).");")->fetchAll()[0][0];
 
       $sql = "UPDATE post SET status = 'done'".
         ", who = INET_ATON(".$dbPDO->quote($_SERVER["REMOTE_ADDR"]).") ".
