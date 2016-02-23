@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 2.8);
+define("VERSION", 2.9);
 ini_set('memory_limit', '256M');
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -131,19 +131,21 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
   get_execution_time(true);
   print  $page; flush();ob_flush();
   $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time,from.fields(id),comments.limit(1).summary(true),likes.limit(1).summary(true)';
-  if(isset($out['until']) && $out['until'] !=0)
-    $page.='&until='.$out['until'];
   $out=$out+array('seq'=>0,  'done'=>false, 'until'=>time(), 'feed'=>array());
   //Get only new ones..
-  if(isset($out['since'])) {
-    $start=true;
-    $end=$out['since'];
-    unset($out['since']); //We don't need this anymore..
+  if(isset($out['since']) && $out['since'] !=0) {
+    $page.='&since='.$out['since'];
+  }
+  //Stop at given position. (for whatever reason)
+  if(isset($out['until']) && $out['until'] != 0) {
+      $page.='&until='.$out['until'];
+      $end=$out['until'];
+      $stopAtPosition = true;
+  } else {
+    $stopAtPosition = false;
   }
 
-  if($out['until'] == 0 || is_null($out['until']))
-    $out['until'] = time();
-  while((time()-$stime) < (3600*1)) { //Just run for 6h and then commit.
+  while((time()-$stime) < (3600*2)) { //Just run for 2h and then commit.
     $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
     if(!isset($fb_data['data'])) {
       print "_"; flush(); ob_flush();
@@ -154,8 +156,8 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
       isset($curr_feed['likes']) ? $likes=$curr_feed['likes']['summary']['total_count'] : $likes=0;
       isset($curr_feed['comments']) ? $comments=$curr_feed['comments']['summary']['total_count'] : $comments=0;
       $out['feed'][$out['seq']++] = array(substr(strstr($curr_feed['id'],'_'),1), strtotime($curr_feed['created_time']), $curr_feed['from']['id'], $likes, $comments);
-      //Store the oldest created_time as epoc in until (so we can resume from that stage).
-      if($out['until'] > strtotime($curr_feed['created_time'])-1)
+      //Store the newest created_time as epoc in until (so we can resume from that stage).
+      if($out['until'] < strtotime($curr_feed['created_time'])-1)
         $out['until'] = strtotime($curr_feed['created_time'])-1;
     }
 #    $out['seq'] = $out['seq']+count($fb_data['data']);
@@ -163,9 +165,10 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
       $out['done'] = true;
       break;
     }
-    $page = $fb_data['paging']['next'];
-    if(isset($start) && $end>$out['until'])
+    if ($stopAtPosition && $out['until'] > $end) {
       break;
+    }
+    $page = $fb_data['page_idng']['next'];
   }
   print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
   return $out;

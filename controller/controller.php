@@ -1,5 +1,5 @@
 <?php
-define('VERSION', 2.8);
+define('VERSION', 2.9);
 require_once('config.php');
 include_once('include/pdoReconnect.php');
 include_once('parser.php');
@@ -284,7 +284,7 @@ function update_page($id, $exec_time, $data){
     ", seq=".$db->quote($data['seq']).
     ", time =".$db->quote($exec_time).";";
   //Set all "old" entries to seq -1 and status old.
-  $sql .= "UPDATE post SET seq=-1 WHERE page_fb_id=".$db->quote($id)." AND seq!=0;";
+  $sql .= "UPDATE post SET seq=-1 WHERE page_fb_id=".$db->quote($id)." AND seq!=0 AND post_fb_id != 0;";
   $sth = $db->exec($sql);
   $sql = "INSERT INTO post (time_stamp, status, seq, date, page_fb_id,post_fb_id, from_user)".
       " VALUES ( UNIX_TIMESTAMP(), 'new', :seq, FROM_UNIXTIME(:date), :page_fb_id, :post_fb_id, :from)".
@@ -299,6 +299,8 @@ function update_page($id, $exec_time, $data){
 
   if(!$data['done']) { //For some reason did the agent not finish, continue where it left of.
     $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);";
+    $db->exec($sql);
+    $sql="UPDATE post SET status = 'recrawl' WHERE post_fb_id = 0 AND page_fb_id = ". $db->quote($id);
     $db->exec($sql);
   }
   $db->query("COMMIT");
@@ -359,19 +361,20 @@ function pull_post($count=3) {
     $row['page_fb_id'] = $r[0];
     $row['post_fb_id'] = $r[1];
       if($row['post_fb_id'] == 0) { //It's a page
-        $s="SELECT seq, UNIX_TIMESTAMP(date) AS until FROM post ".
+        //$s="SELECT seq, UNIX_TIMESTAMP(date) AS until FROM post ".
+        $s="SELECT seq, NULL AS until FROM post ".
         " WHERE page_fb_id=".$row['page_fb_id']." AND post_fb_id=0";//.$row['post_fb_id'];
         $result = $db->query($s);
         $page=$result->fetchAll();
         foreach($page as $p) {
-          if(is_null($p['until'])) {
-            $since=$db->query("SELECT MIN(UNIX_TIMESTAMP(date)) FROM post WHERE page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
+          if(is_null($p['until'])) { //$p['until'] is set to always be NULL, as we don't have a good reason to stop at a specific position *yet*
+            $since=$db->query("SELECT MAX(UNIX_TIMESTAMP(date)) FROM post WHERE page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
             $posts[] = [ 'id' => $row['page_fb_id'], 'type' => 'page',
               'data' => [ 'seq'=>$p['seq'], 'since'=>$since ] ];
-          }
-          else
+          } else {
             $posts[] = [ 'id' => $row['page_fb_id'], 'type' => 'page',
-            'data' => [ 'seq'=>$p['seq'], 'until'=>$p['until'] ] ];
+              'data' => [ 'seq'=>$p['seq'], 'until'=>$p['until'] ] ];
+          }
         }
       } else {
         $posts[] = array('id' => $row['page_fb_id'].'_'.$row['post_fb_id'], 'type' => 'post');
