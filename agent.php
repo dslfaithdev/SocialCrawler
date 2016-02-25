@@ -168,7 +168,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
     if ($stopAtPosition && $out['until'] > $end) {
       break;
     }
-    $page = $fb_data['page_idng']['next'];
+    $page = $fb_data['paging']['next'];
   }
   print " ". get_execution_time(true) . "<br/>\n";flush(); ob_flush();
   return $out;
