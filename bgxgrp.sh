@@ -47,13 +47,20 @@ bgxlimit() {
 # Test program, create group and run 6 sleeps with
 #   limit of 3.
 limit=$1; shift
-trap "pkill -f \"$*\"; exit 0 " SIGINT SIGTERM
+
+myKill() {
+  echo "will kill ${group1}"
+  kill ${group1}
+}
+trap myKill EXIT SIGTERM
+
 group1=""
 echo 0 $(date +%T) '[' ${group1} ']'
 echo
 while true; do
     bgxgrp=${group1} ; bgxlimit $limit $*; group1=${bgxgrp}
     echo ${i} $(date +%T) '[' ${group1} ']'
+    sleep 1
 done
 
 # Wait until all others are finished.

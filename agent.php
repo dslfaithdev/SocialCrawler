@@ -23,8 +23,10 @@ $facebook = new Facebook(array(
 parse_str(implode('&', array_slice($argv, 1)), $_GET);
 if(!isset($_GET['token']))
   print "No token provided, will try to read from the file: ".dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN instead.".PHP_EOL;
-else
+else {
   $token['access_token'] = $_GET['token'];
+  file_put_contents("./TOKEN", $token['access_token'].PHP_EOL);
+}
 renewAccessToken();
 # Registering shutdown function to redirect users.
 register_shutdown_function('fatalErrorHandler');
@@ -279,15 +281,10 @@ function crawl($currentPost, $facebook) {
 
 function renewAccessToken() {
   GLOBAL $facebook, $token;
-  $tokenFile = dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN";
-/* Ignore TOKEN file for now.
+  $tokenFile = "./TOKEN";
   if(file_exists($tokenFile)) {
-    $file = fopen($tokenFile, "r+");
-    $token['access_token'] = fgets($file);
-    ftruncate($file,0);
-    fseek($file,0);
+    $token['access_token'] = trim(file_get_contents($tokenFile));
   }
-*/
   #Renew the accessToken
   $url='https://graph.facebook.com/oauth/access_token?client_id='.APPID.
     '&client_secret='.APPSEC.
@@ -306,10 +303,7 @@ function renewAccessToken() {
   print "New token: " . $token['access_token'];
   print "\nToken expires in ". ($token['expire_time'] - time()) ." secs <br/>\n\n";
   flush();
-  if(!isset($file))
-    $file = fopen($tokenFile,"w+");
-  fwrite($file,$token['access_token'].PHP_EOL);
-  fclose($file);
+  file_put_contents("./TOKEN", $token['access_token'].PHP_EOL);
 }
 
 /**
