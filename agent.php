@@ -1,6 +1,6 @@
 <?php
 define("VERSION", 2.9);
-ini_set('memory_limit', '256M');
+ini_set('memory_limit', -1);
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
 require_once "./facebook-php/src/facebook.php";
