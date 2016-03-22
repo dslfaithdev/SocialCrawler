@@ -73,7 +73,6 @@ CREATE TABLE `post` (
 ) ENGINE=TokuDB DEFAULT CHARSET=utf8 `compression`='tokudb_fast';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
-
 --
 -- Table structure for table `pull_posts`
 --
@@ -84,7 +83,9 @@ DROP TABLE IF EXISTS `pull_posts`;
 CREATE TABLE `pull_posts` (
   `page_fb_id` bigint(20) unsigned NOT NULL DEFAULT '0',
   `post_fb_id` bigint(20) unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`page_fb_id`,`post_fb_id`)
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`page_fb_id`,`post_fb_id`),
+  KEY `timestamp` (`timestamp`) USING BTREE
 ) ENGINE=MEMORY DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -96,7 +97,7 @@ CREATE TABLE `pull_posts` (
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = '' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER pull_posts_pop AFTER DELETE ON pull_posts FOR EACH ROW
+/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER pull_posts_pop AFTER DELETE ON pull_posts FOR EACH ROW 
   BEGIN
     UPDATE post SET status = 'pulled', time_stamp = UNIX_TIMESTAMP(), who = INET_ATON(@WHO) WHERE page_fb_id =  OLD.page_fb_id AND post_fb_id = OLD.post_fb_id;
     SET @deletedIDs = CONCAT_WS(';', @deletedIDs, CONCAT_WS(",", OLD.page_fb_id , OLD.post_fb_id));
@@ -106,7 +107,6 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
-
 
 --
 -- Final view structure for view `crawl_stat`
@@ -126,25 +126,6 @@ DELIMITER ;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
-
---
--- Final view structure for view `pull_post_queue`
---
-
-/*!50001 DROP TABLE IF EXISTS `pull_post_queue`*/;
-/*!50001 DROP VIEW IF EXISTS `pull_post_queue`*/;
-/*!50001 SET @saved_cs_client          = @@character_set_client */;
-/*!50001 SET @saved_cs_results         = @@character_set_results */;
-/*!50001 SET @saved_col_connection     = @@collation_connection */;
-/*!50001 SET character_set_client      = utf8 */;
-/*!50001 SET character_set_results     = utf8 */;
-/*!50001 SET collation_connection      = utf8_general_ci */;
-/*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`sincere`@`garm.comlab.bth.se` SQL SECURITY DEFINER */
-/*!50001 VIEW `pull_post_queue` AS select sec_to_time((count(0) / (select (count(0) / 14400) from `post` where ((`crawling`.`post`.`status` = 'done') and (`crawling`.`post`.`time_stamp` > (unix_timestamp() - 14400)))))) AS `pull_post_queue` from `pull_posts` */;
-/*!50001 SET character_set_client      = @saved_cs_client */;
-/*!50001 SET character_set_results     = @saved_cs_results */;
-/*!50001 SET collation_connection      = @saved_col_connection */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -155,4 +136,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-02-17  5:28:05
+-- Dump completed on 2016-03-22  3:19:11

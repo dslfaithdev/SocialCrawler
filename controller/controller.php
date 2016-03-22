@@ -86,7 +86,7 @@ function prioritize() {
   }
   $pages = $_GET['page'];
   //$posts = $_GET['post'];
-  $sql = "INSERT IGNORE INTO pull_posts SELECT page_fb_id, post_fb_id FROM" .
+  $sql = "INSERT IGNORE INTO pull_posts SELECT page_fb_id, post_fb_id, '2000-01-01' FROM" .
     "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM post WHERE status IN ('pulled', 'updated', 'new', 'recrawl') AND page_fb_id in (" .
     $pages .
     ") ORDER BY ts) AS tmp;";
@@ -298,7 +298,7 @@ function update_page($id, $exec_time, $data){
     $sth->execute([ 'seq'=>$seq, 'date'=>$post[1], 'page_fb_id'=>$id, 'post_fb_id'=>$post[0], 'from'=>$post[2] ]);
 
   if(!$data['done']) { //For some reason did the agent not finish, continue where it left of.
-    $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);";
+    $sql="INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).", 0, '1980-01-01');";
     $db->exec($sql);
     $sql="UPDATE post SET status = 'recrawl' WHERE post_fb_id = 0 AND page_fb_id = ". $db->quote($id);
     $db->exec($sql);
@@ -333,7 +333,7 @@ function pull_post($count=3) {
     $sql = " LOCK TABLES crawling.post READ, crawling.pull_posts WRITE;";
     $db->exec($sql);
     $sql = "INSERT IGNORE INTO pull_posts ".
-      "SELECT page_fb_id, post_fb_id FROM ".
+      "SELECT page_fb_id, post_fb_id, NOW() FROM ".
       "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
       "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
       "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
@@ -347,7 +347,7 @@ function pull_post($count=3) {
   }
   try {
     $db->exec("SET @WHO = " . $db->quote($_SERVER["REMOTE_ADDR"]));
-    $sql = "DELETE FROM pull_posts LIMIT " . intval($count);
+    $sql = "DELETE FROM pull_posts ORDER BY `timestamp` LIMIT " . intval($count);
     if ($db->exec($sql) == 0)
       die(json_encode(array('status'=>'no new posts')+$ret));
     $sql = "SELECT @deletedIDs;";
@@ -368,7 +368,7 @@ function pull_post($count=3) {
         $page=$result->fetchAll();
         foreach($page as $p) {
           if(is_null($p['until'])) { //$p['until'] is set to always be NULL, as we don't have a good reason to stop at a specific position *yet*
-            $since=$db->query("SELECT MAX(UNIX_TIMESTAMP(date)) FROM post WHERE page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
+            $since=$db->query("SELECT UNIX_TIMESTAMP(date) FROM post WHERE post_fb_id =0 AND page_fb_id=".$row['page_fb_id'])->fetchAll()[0][0];
             $posts[] = [ 'id' => $row['page_fb_id'], 'type' => 'page',
               'data' => [ 'seq'=>$p['seq'], 'since'=>$since ] ];
           } else {
@@ -447,7 +447,7 @@ function my_push() {
           continue;
       }
       }
-      $sql="INSERT IGNORE INTO pull_posts VALUES (".$dbPDO->quote(strstr($post['id'],'_',true)).",".
+      $sql="INSERT IGNORE INTO pull_posts (`page_fb_id`,`post_fb_id`) VALUES (".$dbPDO->quote(strstr($post['id'],'_',true)).",".
         (($post['type']== "page") ? "0" :  $dbPDO->quote(substr(strstr($post['id'],'_'),1))).");";
       $result = $dbPDO->exec($sql);
       if(defined('TRACKING_ID')) {
@@ -631,7 +631,7 @@ function stageone() {
     $sql .= "INSERT INTO post (page_fb_id, time_stamp, status, seq, post_fb_id, date)".
       " VALUES ( ".$db->quote($id).", 0, 'new', 0, 0, 0".
       ") ON DUPLICATE KEY UPDATE time_stamp = 0, status='recrawl';";
-    $sql .= "INSERT IGNORE INTO pull_posts VALUES (".$db->quote($id).",0);";
+    $sql .= "INSERT IGNORE INTO pull_posts (`page_fb_id`,`post_fb_id`) VALUES (".$db->quote($id).",0);";
     $sql .= "COMMIT;";
     $count = $db->exec($sql);
     if($db->errorCode() != 0) {
