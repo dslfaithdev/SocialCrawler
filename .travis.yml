@@ -11,11 +11,13 @@ install:
   - cp ./config/config-dist.php ./config/config.php
   - cp controller/bootstap/config.default.php controller/config.php
   - php controller/composer.phar --working-dir=controller install
+  - composer global require "squizlabs/php_codesniffer=*"
 
 services:
   - mysql
 
 script:
+  - ~/.composer/vendor/bin/phpcs --standard=myPHPCSrules.xml  --report-full --report-summary -s --colors `git ls-files |grep '\.php'`
   - php -l agent.php
   - ./unitTest.sh
   - php -l controller/controller.php

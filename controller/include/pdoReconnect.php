@@ -1,17 +1,23 @@
 <?php
 
-function dbConnect($timeout, $options = array()) {
+function dbConnect($timeout, $options = array())
+{
     $db = new pdo(PDO_dsn, PDO_username, PDO_password);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_WARNING);
     $db->setAttribute(PDO::ATTR_TIMEOUT, "0");
-    foreach($options as $option)
+    foreach ($options as $option) {
         $db->exec($option);
+    }
     return $db;
 }
 
 class ReconnectingPDO
 {
-    protected $dsn, $username, $password, $pdo, $driver_options;
+    protected $dsn;
+    protected $username;
+    protected $password;
+    protected $pdo;
+    protected $driver_options;
 
     public function __construct($dsn, $username = "", $password = "", $driver_options = array())
     {
@@ -25,8 +31,8 @@ class ReconnectingPDO
     {
         try {
             $this->connection()->query("SHOW STATUS;")->execute();
-        } catch(\PDOException $e) {
-            if($e->getCode() != 'HY000' || !stristr($e->getMessage(), 'server has gone away')) {
+        } catch (\PDOException $e) {
+            if ($e->getCode() != 'HY000' || !stristr($e->getMessage(), 'server has gone away')) {
                 //throw $e;
             }
 
@@ -54,4 +60,3 @@ class ReconnectingPDO
         return $this->connect();
     }
 }
-?>
