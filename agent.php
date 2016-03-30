@@ -10,6 +10,9 @@ if(php_sapi_name() === 'cli') {
   set_time_limit(0);
   if(defined('SESSION_PATH'))
      session_save_path(SESSION_PATH);
+
+  //Parse command line arguments as GET variables
+  parse_str(implode('&', array_slice($argv, 1)), $_GET);
 }
 else
   set_time_limit(240);
@@ -19,15 +22,6 @@ $facebook = new Facebook(array(
     'secret' => APPSEC,
 ));
 
-//Parse command line arguments as GET variables
-parse_str(implode('&', array_slice($argv, 1)), $_GET);
-if(!isset($_GET['token']))
-  print "No token provided, will try to read from the file: ".dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN instead.".PHP_EOL;
-else {
-  $token['access_token'] = $_GET['token'];
-  file_put_contents("./TOKEN", $token['access_token'].PHP_EOL);
-}
-renewAccessToken();
 # Registering shutdown function to redirect users.
 register_shutdown_function('fatalErrorHandler');
 
@@ -36,6 +30,25 @@ ob_implicit_flush(true);
 //ob_end_flush();
 $obfw = new OB_FileWriter(dirname($_SERVER['SCRIPT_FILENAME']) .'/log/session-'.getmypid().'.log');
 $obfw->start();
+
+if(isset($_GET['posts'])) {
+  foreach(explode(',', $_GET['posts']) as $post) {
+    if (strpos($post, '_') !== false) {
+      file_put_contents($post.'.json', json_encode(crawl($post, $facebook)).PHP_EOL.PHP_EOL);
+    } else {
+      file_put_contents($post.'.json', json_encode(fb_page_extract($post, $facebook)).PHP_EOL.PHP_EOL);
+    }
+  }
+  die();
+}
+
+if(!isset($_GET['token']))
+  print "No token provided, will try to read from the file: ".dirname($_SERVER['SCRIPT_FILENAME']) . "/TOKEN instead.".PHP_EOL;
+else {
+  $token['access_token'] = $_GET['token'];
+  file_put_contents("./TOKEN", $token['access_token'].PHP_EOL);
+}
+renewAccessToken();
 
 while(true) {
   $out = array();

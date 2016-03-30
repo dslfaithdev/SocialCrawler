@@ -1,0 +1,21 @@
+language: php
+
+php:
+  - '5.5'
+  - '5.6'
+  - '7.0'
+  - hhvm
+
+install:
+  - git submodule update --init
+  - cp ./config/config-dist.php ./config/config.php
+  - cp controller/bootstap/config.default.php controller/config.php
+  - php controller/composer.phar --working-dir=controller install
+
+services:
+  - mysql
+
+script:
+  - php -l agent.php
+  - ./unitTest.sh
+  - php -l controller/controller.php
