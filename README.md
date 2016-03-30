@@ -1,4 +1,4 @@
-Social Packets crawler
+Social Packets crawler [![Build Status](https://travis-ci.org/dslfaithdev/SocialCrawler.svg?branch=master)](https://travis-ci.org/dslfaithdev/SocialCrawler)
 ======================
 S. Felix Wu, wu@cs.ucdavis.edu  
 Fredrik Erlandsson, fredrik.erlandsson@bth.se

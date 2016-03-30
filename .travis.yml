@@ -10,15 +10,12 @@ install:
   - git submodule update --init
   - cp ./config/config-dist.php ./config/config.php
   - cp controller/bootstap/config.default.php controller/config.php
-  - pyrus install pear/PHP_CodeSniffer
-  - phpenv rehash
+  - php controller/composer.phar --working-dir=controller install
 
-before_script:
-#  - composer global require "squizlabs/php_codesniffer=*"
+services:
+  - mysql
 
 script:
   - php -l agent.php
-  - phpunit agent.php
+  - ./unitTest.sh
   - php -l controller/controller.php
-  - phpunit controller/controller.php
-  - phpcs --standard=psr2 ./
