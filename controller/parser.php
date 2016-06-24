@@ -188,7 +188,7 @@ function parseJsonString($string, &$table = []) {
               $table[$type][] = [
                 $tag['id'], $page_id, $post_id, $message_id, $tag['offset'],
                 $tag['length'], isSetOr($tag['type'],'null',true),
-                my_escape(isSetOr($tag['name'], 'null', true))
+                isSetOr($tag['name'], 'generic_tag', true)
               ];
           }
         }
