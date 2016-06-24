@@ -35,9 +35,12 @@ function parseJsonString($string, &$table = []) {
 
   // Handle place found in $post[place]
   if(isset($post['place'])) {
+    if(isset($post['place']['location']['latitude'], $post['place']['location']['longitude']))
     $table['place'][$post['place']['id']] = [
       $post['place']['id'], my_escape($post['place']['name']),
-      $post['place']['location']['latitude'], $post['place']['location']['longitude'] ];
+        $post['place']['location']['latitude'], $post['place']['location']['longitude'] ];
+    else
+      file_put_contents("parserDebug.txt" , json_encode($post['place']) . PHP_EOL, FILE_APPEND | LOCK_EX);
   }
   // Handle application found in $post[applicatin]
   if(isset($post['application'])) {
@@ -149,6 +152,10 @@ function parseJsonString($string, &$table = []) {
       //preg_match('/([0-9]+)_([0-9]+)\\/comments/', current($d['ec_comments']['paging']),$matches);
       foreach ($d['ec_comments']['data'] as $c) {
         if(isset($c['id'])) {
+          if(!isset($c['from'])) {
+            file_put_contents("parserDebug.txt" , json_encode($c) . PHP_EOL, FILE_APPEND | LOCK_EX);
+            continue;
+          }
           $user = $c['from'];
           if( isset($user['category'])) {
             $table['page'][$user['id']] = [ $user['id'], my_escape($user['name']), my_escape($user['category']) ];
@@ -174,10 +181,15 @@ function parseJsonString($string, &$table = []) {
             if(!isset($c[$type]))
               continue;
             foreach($c[$type] as $tag)
-              if(!isset($tag['id'])){ var_dump($c['message_tags']); die(0);}
+              if(!isset($tag['id'])) {
+                file_put_contents("parserDebug.txt", print_r($c['message_tags'], true)  PHP_EOL, FILE_APPEND | LOCK_EX);
+                var_dump($c['message_tags']); echo "No id\n"; die(0);
+              }
               $table[$type][] = [
-              $tag['id'], $page_id, $post_id, $message_id, $tag['offset'],
-              $tag['length'], isSetOr($tag['type'],'null',true), my_escape($tag['name']) ];
+                $tag['id'], $page_id, $post_id, $message_id, $tag['offset'],
+                $tag['length'], isSetOr($tag['type'],'null',true),
+                my_escape(isSetOr($tag['name'], 'null', true))
+              ];
           }
         }
       }
@@ -262,7 +274,7 @@ function insertToDB($query, $db) {
       //foreach ($value as &$line)
         //$line = "(".implode(",", $line).")";
       //while(count($value)) {
-      $arr = array_chunk($value, 2500);
+      $arr = array_chunk($value, 200);
       unset($value);
       foreach($arr as $v) {
         foreach ($v as &$line) {
