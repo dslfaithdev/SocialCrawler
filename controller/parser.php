@@ -26,7 +26,7 @@ function parseJsonString($string, &$table = []) {
       $users=array_merge((array)$users, (array)$post['to']['data']);
     foreach($users as $user) {
       if( isset($user['category'])) {
-	$table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'],'null',true), my_escape($user['category']) ];
+	$table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'],'null',true), isSetOr($user['category'], 'null', true) ];
       } else {
 	$table['fb_user'][$user['id']] = [ isSetOr($user['id'], 0), isSetOr($user['name'],'null',true), "null" ];
       }
@@ -37,7 +37,7 @@ function parseJsonString($string, &$table = []) {
   if(isset($post['place'])) {
     if(isset($post['place']['location']['latitude'], $post['place']['location']['longitude']))
     $table['place'][$post['place']['id']] = [
-      $post['place']['id'], my_escape($post['place']['name']),
+      $post['place']['id'], isSetOr($post['place']['name'], 'null', true),
         $post['place']['location']['latitude'], $post['place']['location']['longitude'] ];
     else
       file_put_contents("parserDebug.txt" , json_encode($post['place']) . PHP_EOL, FILE_APPEND | LOCK_EX);
@@ -55,7 +55,7 @@ function parseJsonString($string, &$table = []) {
       foreach($tags as $tag) {
           $table[$type][] = [
           $tag['id'], $page_id, $post_id, 'null', $tag['offset'],
-          $tag['length'], isSetOr($tag['type'],'null',true), my_escape($tag['name']) ];
+          $tag['length'], isSetOr($tag['type'],'null',true), isSetOr($tag['name'], 'null', true) ];
       }
     unset($post[$type]);
   }
@@ -133,7 +133,7 @@ function parseJsonString($string, &$table = []) {
       foreach ($d['ep_likes']['data'] as $user)
         if(isset($user['id'])) {
           if( isset($user['category'])) {
-            $table['page'][$user['id']] = [ $user['id'], my_escape($user['name']), my_escape($user['category']) ];
+            $table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'], 'null', true), isSetOr($user['category'], 'null', true) ];
           } else {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
@@ -158,7 +158,7 @@ function parseJsonString($string, &$table = []) {
           }
           $user = $c['from'];
           if( isset($user['category'])) {
-            $table['page'][$user['id']] = [ $user['id'], my_escape($user['name']), my_escape($user['category']) ];
+            $table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'], 'null', true), isSetOr($user['category'], 'null', true) ];
           } else {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
@@ -211,7 +211,7 @@ function parseJsonString($string, &$table = []) {
       foreach ($d['ec_likes']['data'] as $user)
         if(isset($user['id'])) {
           if( isset($user['category'])) {
-            $table['page'][$user['id']] = [ $user['id'], my_escape($user['name']), my_escape($user['category']) ];
+            $table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'], 'null', true), isSetOr($user['category'], 'null', true) ];
           } else {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
@@ -228,7 +228,7 @@ function parseJsonString($string, &$table = []) {
         if(isset($share['from'])) {
           $user=$share['from'];
           if( isset($user['category'])) {
-            $table['page'][$user['id']] = [ $user['id'], my_escape($user['name']), my_escape($user['category']) ];
+            $table['page'][$user['id']] = [ $user['id'], isSetOr($user['name'], 'null', true), isSetOr($user['category'], 'null', true) ];
           } else {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
