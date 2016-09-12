@@ -1,0 +1,33 @@
+{
+    "description": "<p>SocialCrawler is a distributed crawler designed to crawl public groups and pages on Facebook.</p>\n\n<p>This crawler differs significantly from other existing crawlers in terms of efficiency and crawling depth. It is\u00a0getting all interactions related to every single post. In addition, is the crawler\u00a0able to understand interaction dynamics, enabling support for making informed decisions on what content to re-crawl in order to get the most recent snapshot of interactions.</p>", 
+    "license": "Apache-2.0", 
+    "title": "SocialCrawler", 
+    "upload_type": "software", 
+    "references": [
+        "F. Erlandsson, R. Nia, M. Boldt, H. Johnson and S. F. Wu, \"Crawling Online Social Networks,\" Network Intelligence Conference (ENIC), 2015 Second European, Karlskrona, 2015, pp. 9-16. doi: 10.1109/ENIC.2015.10"
+    ], 
+    "publication_date": "2016-09-12", 
+    "creators": [
+        {
+            "affiliation": "Blekinge Institute of Technology", 
+            "name": "Fredrik Erlandsson"
+        }, 
+        {
+            "affiliation": "UC Davis", 
+            "name": "Felix S. Wu"
+        }
+    ], 
+    "access_right": "open", 
+    "related_identifiers": [
+        {
+            "scheme": "url", 
+            "identifier": "https://github.com/dslfaithdev/SocialCrawler", 
+            "relation": "isSupplementTo"
+        }, 
+        {
+            "scheme": "doi", 
+            "identifier": "10.1109/ENIC.2015.10", 
+            "relation": "isSupplementedBy"
+        }
+    ]
+}

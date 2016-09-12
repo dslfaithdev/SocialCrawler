@@ -1,4 +1,4 @@
-Social Packets crawler [![Build Status](https://travis-ci.org/dslfaithdev/SocialCrawler.svg?branch=master)](https://travis-ci.org/dslfaithdev/SocialCrawler)
+Social Packets crawler [![Build Status](https://travis-ci.org/dslfaithdev/SocialCrawler.svg?branch=master)](https://travis-ci.org/dslfaithdev/SocialCrawler) [![DOI](https://sandbox.zenodo.org/badge/4122374.svg)](https://sandbox.zenodo.org/badge/latestdoi/4122374)
 ======================
 S. Felix Wu, wu@cs.ucdavis.edu  
 Fredrik Erlandsson, fredrik.erlandsson@bth.se
