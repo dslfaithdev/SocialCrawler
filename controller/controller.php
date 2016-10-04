@@ -464,7 +464,7 @@ function my_push() {
      " AND post_fb_id=".$dbPDO->quote(substr(strstr($post['id'],'_'),1));
     $result = $dbPDO->query($sql);
     if(($row=$result->fetchAll()[0])) {
-      $archive = realpath(dirname(__FILE__)).'/phar/'.preg_replace('/[^[:alnum:]]/', '_', $row['archive']).'-'.$row['fb_id'];
+      $archive = realpath(dirname(__FILE__)).'/phar/'.substr(preg_replace('/[^[:alnum:]]/', '_', $row['archive']),0,40).'-'.$row['fb_id'];
       //Lock archive, this lock will be released when we get a new lock or close connection.
       $lock = $dbPDO->query("SELECT GET_LOCK(".$dbPDO->quote($archive).", 30);")->fetchAll()[0][0];
       if($lock != 1) //Unable to get lock.
