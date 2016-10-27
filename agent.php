@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 3.0);
+define("VERSION", 3.1);
 define("API_VERSION", 2.8);
 
 ini_set('memory_limit', -1);
@@ -250,7 +250,7 @@ function crawl($currentPost, $facebook) {
   // ec_comments handling --
   $ec_comments_page = 1;
   $ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost .
-    "/comments?fields=id,message,from,like_count,message_tags,created_time,parent&summary=true");
+    "/comments?fields=id,message,from,like_count,message_tags,created_time,parent{id}&filter=stream&summary=true");
   print "C"; flush(); ob_flush();
   while($ec_comments_page) {
     if ($ec_comments) {

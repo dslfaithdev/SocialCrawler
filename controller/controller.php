@@ -1,5 +1,5 @@
 <?php
-define('VERSION', 3.0);
+define('VERSION', 3.1);
 require_once('config.php');
 include_once('include/pdoReconnect.php');
 include_once('parser.php');

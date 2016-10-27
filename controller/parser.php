@@ -168,11 +168,22 @@ function parseJsonString($string, &$table = []) {
           //else
           $message_id = array_pop($ids);
           $comments[]=$message_id;
-          $table["comment"][] = array(
-            $message_id, $post_id, $page_id, isSetOr($user['id']),
-            isSetOr($c['message'],'null',true),
-            (isset($c['can_remove']) ? 1 : 0),
-            isSetOr($c['created_time'],'null',true));
+          if(isset($c['parent'])) {
+            $table["reply"][] = array(
+              $message_id, $post_id, $page_id,
+              substr(strstr($c['parent']['id'], '_'), 1), //Just use the commentId (postId_commentId)
+              isSetOr($user['id']),
+              isSetOr($c['message'],'null',true),
+              (isset($c['can_remove']) ? 1 : 0),
+              isSetOr($c['created_time'],'null',true)
+            );
+          } else {
+            $table["comment"][] = array(
+              $message_id, $post_id, $page_id, isSetOr($user['id']),
+              isSetOr($c['message'],'null',true),
+              (isset($c['can_remove']) ? 1 : 0),
+              isSetOr($c['created_time'],'null',true));
+          }
           $cs++;
           //"to_timestamp('".  pg_escape_string(isSetOr($c['created_time'])).  "', 'YYYY-MM-DD HH24:MI:SS')"));
 
