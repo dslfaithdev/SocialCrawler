@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 3.1);
+define("VERSION", 3.2);
 define("API_VERSION", 2.8);
 
 ini_set('memory_limit', -1);
@@ -210,7 +210,7 @@ function crawl($currentPost, $facebook) {
   // el_likes handling --
   $ep_likes_page = 1;
   $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost .
-    "/likes?summary=total_count&fields=name,profile_type");
+    "/reactions?summary=total_count&fields=id,type,name,profile_type");
   print "L"; flush(); ob_flush();
   while($ep_likes_page) {
     if ($ep_likes) {
