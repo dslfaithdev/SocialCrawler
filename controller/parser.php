@@ -137,9 +137,13 @@ function parseJsonString($string, &$table = []) {
           } else {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
-          $table["likedby"][] = [
-            $page_id, $post_id, 0, $user['id'], isSetOr($user['created_time'],'null',true)];
-          //$matches[1], $matches[2], 0, $like['id'], "to_timestamp('".isSetOr($like['created_time'])."', 'YYYY-MM-DD HH24:MI:SS')"));
+          if(isset($user['type'])) { //It is a reaction!!
+            $table["reaction"][] = [
+              $page_id, $post_id, 0, $user['id'], isSetOr($user['type'], 'null', true)];
+          } else {
+            $table["likedby"][] = [
+              $page_id, $post_id, 0, $user['id'], isSetOr($user['created_time'], 'null', true)];
+          }
           $likes++;
         }
     }
