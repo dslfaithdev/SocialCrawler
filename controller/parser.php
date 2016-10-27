@@ -88,15 +88,15 @@ function parseJsonString($string, &$table = []) {
     isSetOr($post['icon'],'null',true),
     isSetOr($post['created_time'],'null',true),
     isSetOr($post['updated_time'],'null',true),
-    isSetOr($post['can_remove'], 0,'null',true),
+    'null', //can_remove
     isSetOr($post['shares']['count']),
-    isSetOr($post['likes']['count']),
-    isSetOr($post['comments']['count']),
+    isSetOr($post['likes']['summary']['total_count']), //isSetOr($post['likes']['count']),
+    isSetOr($post['comments']['summary']['total_count']), //isSetOr($post['comments']['count']),
     'null', 'null', //we can't extract entropy from our crawled post
     isSetOr($post['object_id'], 'null', true),
     isSetOr($post['status_type'],'null',true),
     isSetOr($post['source'],'null',true),
-    isSetOr($post['is_hidden'], '0', true),
+    'null' //is_hidden
     isSetOr($post['application']['id']),
     isSetOr($post['place']['id'])
   );
