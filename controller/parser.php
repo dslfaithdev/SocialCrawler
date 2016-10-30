@@ -88,15 +88,15 @@ function parseJsonString($string, &$table = []) {
     isSetOr($post['icon'],'null',true),
     isSetOr($post['created_time'],'null',true),
     isSetOr($post['updated_time'],'null',true),
-    isSetOr($post['can_remove'], 0,'null',true),
+    'null', //can_remove
     isSetOr($post['shares']['count']),
-    isSetOr($post['likes']['count']),
-    isSetOr($post['comments']['count']),
+    isSetOr($post['likes']['summary']['total_count']), //isSetOr($post['likes']['count']),
+    isSetOr($post['comments']['summary']['total_count']), //isSetOr($post['comments']['count']),
     'null', 'null', //we can't extract entropy from our crawled post
     isSetOr($post['object_id'], 'null', true),
     isSetOr($post['status_type'],'null',true),
     isSetOr($post['source'],'null',true),
-    isSetOr($post['is_hidden'], '0', true),
+    'null', //is_hidden
     isSetOr($post['application']['id']),
     isSetOr($post['place']['id'])
   );
@@ -137,9 +137,13 @@ function parseJsonString($string, &$table = []) {
           } else {
             $table['fb_user'][$user['id']] = [ isSetOr($user['id'],0), isSetOr($user['name'],'null',true), "null" ];
           }
-          $table["likedby"][] = [
-            $page_id, $post_id, 0, $user['id'], isSetOr($user['created_time'],'null',true)];
-          //$matches[1], $matches[2], 0, $like['id'], "to_timestamp('".isSetOr($like['created_time'])."', 'YYYY-MM-DD HH24:MI:SS')"));
+          if(isset($user['type'])) { //It is a reaction!!
+            $table["reaction"][] = [
+              $page_id, $post_id, 0, $user['id'], isSetOr($user['type'], 'null', true)];
+          } else {
+            $table["likedby"][] = [
+              $page_id, $post_id, 0, $user['id'], isSetOr($user['created_time'], 'null', true)];
+          }
           $likes++;
         }
     }
@@ -168,11 +172,22 @@ function parseJsonString($string, &$table = []) {
           //else
           $message_id = array_pop($ids);
           $comments[]=$message_id;
-          $table["comment"][] = array(
-            $message_id, $post_id, $page_id, isSetOr($user['id']),
-            isSetOr($c['message'],'null',true),
-            (isset($c['can_remove']) ? 1 : 0),
-            isSetOr($c['created_time'],'null',true));
+          if(isset($c['parent'])) {
+            $table["reply"][] = array(
+              $message_id, $post_id, $page_id,
+              substr(strstr($c['parent']['id'], '_'), 1), //Just use the commentId (postId_commentId)
+              isSetOr($user['id']),
+              isSetOr($c['message'],'null',true),
+              (isset($c['can_remove']) ? 1 : 0),
+              isSetOr($c['created_time'],'null',true)
+            );
+          } else {
+            $table["comment"][] = array(
+              $message_id, $post_id, $page_id, isSetOr($user['id']),
+              isSetOr($c['message'],'null',true),
+              (isset($c['can_remove']) ? 1 : 0),
+              isSetOr($c['created_time'],'null',true));
+          }
           $cs++;
           //"to_timestamp('".  pg_escape_string(isSetOr($c['created_time'])).  "', 'YYYY-MM-DD HH24:MI:SS')"));
 

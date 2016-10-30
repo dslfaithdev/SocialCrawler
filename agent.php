@@ -1,5 +1,7 @@
 <?php
-define("VERSION", 2.9);
+define("VERSION", 3.2);
+define("API_VERSION", 2.8);
+
 ini_set('memory_limit', -1);
 require_once "./config/config.php";
 require_once "./include/outputHandler.php";
@@ -20,6 +22,7 @@ else
 $facebook = new Facebook(array(
     'appId' => APPID,
     'secret' => APPSEC,
+    'default_graph_version' => API_VERSION,
 ));
 
 # Registering shutdown function to redirect users.
@@ -145,7 +148,9 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
   $stime=time();
   get_execution_time(true);
   print  $page; flush();ob_flush();
-  $page='https://graph.facebook.com/'.$page.'/feed?fields=id,created_time,from.fields(id),comments.limit(1).summary(true),likes.limit(1).summary(true)';
+  $page='https://graph.facebook.com/v'.API_VERSION.'/'.$page.'/feed?fields=id,created_time,updated_time,from{id},' .
+    'likes.limit(1).summary(total_count){id},' .
+    'comments.limit(1).summary(total_count){id}';
   $out=$out+array('seq'=>0,  'done'=>false, 'until'=>time(), 'feed'=>array());
   //Get only new ones..
   if(isset($out['since']) && $out['since'] !=0) {
@@ -161,7 +166,7 @@ function fb_page_extract($page, $facebook, array &$out = array()) {
   }
 
   while((time()-$stime) < (3600*2)) { //Just run for 2h and then commit.
-    $fb_data = facebook_api_wrapper($facebook, substr($page, 26));
+    $fb_data = facebook_api_wrapper($facebook, substr($page, strlen(API_VERSION) + 28));
     if(!isset($fb_data['data'])) {
       print "_"; flush(); ob_flush();
       continue;
@@ -193,12 +198,18 @@ function crawl($currentPost, $facebook) {
   get_execution_time(true);
   print  $currentPost;
   flush();ob_flush();
-  $curr_feed = facebook_api_wrapper($facebook, '/' . $currentPost);
+  $fields = '?fields=message,type,picture,story,link,name,description,caption,icon,' .
+    'created_time,updated_time,shares,' .
+    'object_id,status_type,source,application,place,' .
+    'likes.limit(1).summary(total_count){id},'.
+    'comments.limit(1).summary(total_count){id}';
+  $curr_feed = facebook_api_wrapper($facebook, '/' . $currentPost . $fields);
   print "."; flush(); ob_flush();
   $out = sprintf("%s\n\n", json_encode($curr_feed));
   // el_likes handling --
   $ep_likes_page = 1;
-  $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost . "/likes?summary=1&fields=name,profile_type");
+  $ep_likes = facebook_api_wrapper($facebook, '/' . $currentPost .
+    "/reactions?summary=total_count&fields=id,type,name,profile_type");
   print "L"; flush(); ob_flush();
   while($ep_likes_page) {
     if ($ep_likes) {
@@ -207,7 +218,7 @@ function crawl($currentPost, $facebook) {
       if (isset($ep_likes['paging']) && isset($ep_likes['paging']['next']))
         $ep_likes_page = $ep_likes['paging']['next'];
       if ($ep_likes_page) {
-        $ep_likes = facebook_api_wrapper($facebook, substr($ep_likes_page, 26));
+        $ep_likes = facebook_api_wrapper($facebook, substr($ep_likes_page, strlen(API_VERSION) + 28));
         print "L"; flush(); ob_flush();
       }
     }
@@ -217,7 +228,7 @@ function crawl($currentPost, $facebook) {
 
   // ep_shares
   if(isset($curr_feed['shares'],$curr_feed['shares']['count']) && $curr_feed['shares']['count'] != 0) {
-    $page = substr(strrchr($currentPost, '_'),1). '/sharedposts?fields=from,updated_time,created_time,to';
+    $page = $currentPost . '/sharedposts?fields=from,updated_time,created_time,to';
     while($page) {
       try {
         $fb_data = facebook_api_wrapper($facebook, $page);
@@ -228,7 +239,7 @@ function crawl($currentPost, $facebook) {
       print "S"; flush(); ob_flush();
       $out .= sprintf("{\"ep_shares\":%s}\n\n", json_encode($fb_data));
       if (isset($fb_data['paging'],$fb_data['paging']['next']))
-        $page = substr($fb_data['paging']['next'], 26);
+        $page = substr($fb_data['paging']['next'], strlen(API_VERSION) + 28);
       else
         $page = NULL;
     }
@@ -238,7 +249,8 @@ function crawl($currentPost, $facebook) {
 
   // ec_comments handling --
   $ec_comments_page = 1;
-  $ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost . "/comments?fields=id,message,from,like_count,message_tags,created_time,parent&summary=true");
+  $ec_comments = facebook_api_wrapper($facebook, '/' . $currentPost .
+    "/comments?fields=id,message,from,like_count,message_tags,created_time,parent{id}&filter=stream&summary=true");
   print "C"; flush(); ob_flush();
   while($ec_comments_page) {
     if ($ec_comments) {
@@ -254,7 +266,8 @@ function crawl($currentPost, $facebook) {
           $out .= "{\"ec_likes\":{\"data\":[]}}\n\n";
           continue;
         }
-        $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] . "/likes?summary=1&fields=name,profile_type");
+        $ec_likes = facebook_api_wrapper($facebook, '/' . $ec_comment['id'] .
+          "/likes?summary=total_count&fields=name,profile_type");
         $old_url="";
         print "l"; flush(); ob_flush();
         while($ec_likes) {
@@ -268,7 +281,7 @@ function crawl($currentPost, $facebook) {
                 break;
               }
               $old_url = $ec_likes_page;
-              $ec_likes = facebook_api_wrapper($facebook, substr($ec_likes_page, 26));
+              $ec_likes = facebook_api_wrapper($facebook, substr($ec_likes_page, strlen(API_VERSION) + 28));
               print "l"; flush(); ob_flush();
             }
             else
@@ -279,7 +292,7 @@ function crawl($currentPost, $facebook) {
       if (isset($ec_comments['paging']) && isset($ec_comments['paging']['next']))
         $ec_comments_page = $ec_comments['paging']['next'];
       if ($ec_comments_page) {
-        $ec_comments = facebook_api_wrapper($facebook, substr($ec_comments_page, 26));
+        $ec_comments = facebook_api_wrapper($facebook, substr($ec_comments_page, strlen(API_VERSION) + 28));
         print "C"; flush(); ob_flush();
       }
     }
@@ -354,7 +367,7 @@ function facebook_api_wrapper($facebook, $url) {
   global $start_time;
   while (1) {
     try {
-      $data = $facebook->api($url, 'GET', array('limit' => 200/($error+1)));
+      $data = $facebook->api('/v' . API_VERSION . '/' . $url, 'GET', array('limit' => 100/($error+1)));
       return $data;
     } catch (Exception $e) {
       $t = time(1);
