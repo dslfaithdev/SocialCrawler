@@ -19,3 +19,5 @@ script:
   - php -l agent.php
   - ./unitTest.sh
   - php -l controller/controller.php
+
+dist: trusty
