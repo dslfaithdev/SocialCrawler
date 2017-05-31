@@ -1,5 +1,5 @@
 <?php
-define("VERSION", 3.2);
+define("VERSION", 3.3);
 define("API_VERSION", 2.8);
 
 ini_set('memory_limit', -1);
@@ -201,6 +201,7 @@ function crawl($currentPost, $facebook) {
   $fields = '?fields=message,type,picture,story,link,name,description,caption,icon,' .
     'created_time,updated_time,shares,' .
     'object_id,status_type,source,application,place,' .
+    'message_tags,to,with_tags,' .
     'likes.limit(1).summary(total_count){id},'.
     'comments.limit(1).summary(total_count){id}';
   $curr_feed = facebook_api_wrapper($facebook, '/' . $currentPost . $fields);
