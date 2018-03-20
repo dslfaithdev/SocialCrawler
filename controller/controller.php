@@ -123,8 +123,10 @@ function crawl_stat() {
   m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
   })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
 
+<?php if(defined('TRACKING_ID')) {?>
   ga('create', <?php print "'" . TRACKING_ID ."'" ?>, 'auto');
   ga('send', 'pageview');
+<?php } ?>
 
 </script>
 <body>
@@ -340,10 +342,12 @@ function pull_post($count=3) {
       "ORDER BY ts) AS tmp LIMIT 1500;"; #14400 == 4h.  86400 == 24h
     $db->exec($sql);
     $db->exec("UNLOCK TABLES;");
-    gAnalytics("pull_post")
-      ->setEventCategory('Pull')
-      ->setEventAction('add new posts')
-      ->sendEvent();
+    if(defined('TRACKING_ID')) {
+      gAnalytics("pull_post")
+        ->setEventCategory('Pull')
+        ->setEventAction('add new posts')
+        ->sendEvent();
+    }
   }
   try {
     $db->exec("SET @WHO = " . $db->quote($_SERVER["REMOTE_ADDR"]));
@@ -382,11 +386,12 @@ function pull_post($count=3) {
   }
   if(count($posts) == 0)
     die(json_encode(array('status'=>'no new posts')+$ret));
-  gAnalytics("pull_post")
-    ->setEventCategory('Pull')
-    ->setEventAction('pulled posts')
-    ->setEventValue(count($posts))
-    ->sendEvent();
+  if(defined('TRACKING_ID'))
+    gAnalytics("pull_post")
+      ->setEventCategory('Pull')
+      ->setEventAction('pulled posts')
+      ->setEventValue(count($posts))
+      ->sendEvent();
   print json_encode(array('posts'=>$posts)+$ret);
 }
 
@@ -486,41 +491,42 @@ function my_push() {
       $query = $dbPDO->exec($sql);
       if($query != 1)
         die("DB error, try again.");
-      if(defined('TRACKING_ID')) {
+      if(defined('TRACKING_ID'))
         gAnalytics("push")
           ->setEventCategory('Push')
           ->setEventAction('done')
           ->sendEvent();
-      }
-      /*
-       * Insert into db
-       */
-      $db = new mysqli(MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB, MYSQL_PORT);
-      if ($db->connect_error) {
-        error_log('Connect Error F ('.$db->connect_errno.') '.$db->connect_error, 0);
-        continue;
-      }
-      $GLOBALS['db'] = &$db;
-      try {
-        insertToDB(parseJsonString($post['data']), $db);
-        $db->close();
-      } catch (Exception $e) {
+
+      if(defined('DB')) {
+        /*
+         * Insert into db
+         */
+        $db = new mysqli(MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB, MYSQL_PORT);
+        if ($db->connect_error) {
+          error_log('Connect Error F ('.$db->connect_errno.') '.$db->connect_error, 0);
+          continue;
+        }
+        $GLOBALS['db'] = &$db;
+        try {
+          insertToDB(parseJsonString($post['data']), $db);
+          $db->close();
+        } catch (Exception $e) {
+          if(defined('TRACKING_ID')) 
+            gAnalytics("push")
+              ->setExceptionDescription("Parse Error: " . $e->getMessage())->sendException();
+          
+          error_log("Parse Error (".($post['id']).") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
+          file_put_contents("parseIssues.csv", $archive . "," . $fname . "," . $e->getMessage() . PHP_EOL, FILE_APPEND);
+        }
+      } else {
         if(defined('TRACKING_ID')) {
           gAnalytics("push")
-            ->setExceptionDescription("Parse Error: " . $e->getMessage())
-            ->sendException();
-  }
-  error_log("Parse Error (".($post['id']).") ".$e->getMessage()." in ".$e->getFile().":".$e->getLine(),0);
-  file_put_contents("parseIssues.csv", $archive . "," . $fname . "," . $e->getMessage() . PHP_EOL, FILE_APPEND);
+            ->setEventCategory('Push')
+            ->setEventAction('invalid post_id')
+            ->sendEvent();
+        }
+        die("No post with id $post_id in db");
       }
-    } else {
-      if(defined('TRACKING_ID')) {
-        gAnalytics("push")
-          ->setEventCategory('Push')
-          ->setEventAction('invalid post_id')
-          ->sendEvent();
-      }
-      die("No post with id $post_id in db");
     }
   }
   print "Pushed to db.\n";  return;
