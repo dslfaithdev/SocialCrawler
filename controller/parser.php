@@ -51,12 +51,12 @@ function parseJsonString($string, &$table = []) {
   foreach(['story_tags', 'message_tags'] as $type) {
     if(!isset($post[$type]))
       continue;
-    foreach($post[$type] as $tags)
-      foreach($tags as $tag) {
-          $table[$type][] = [
-          $tag['id'], $page_id, $post_id, 'null', $tag['offset'],
-          $tag['length'], isSetOr($tag['type'],'null',true), isSetOr($tag['name'], 'null', true) ];
-      }
+    foreach($post[$type] as $tag) {
+      //file_put_contents("parserDebug.txt" , "Tags $post_id:" . json_encode($tag) . PHP_EOL, FILE_APPEND | LOCK_EX);
+      $table[$type][] = [
+      $tag['id'], $page_id, $post_id, 'null', $tag['offset'],
+      $tag['length'], isSetOr($tag['type'],'null',true), isSetOr($tag['name'], 'null', true) ];
+    }
     unset($post[$type]);
   }
   // Handle with_tags
@@ -211,9 +211,10 @@ function parseJsonString($string, &$table = []) {
     }
     if(isset($d['ec_likes'])) {
       $comment_id=array_shift($comments);
+      //file_put_contents("parserDebug.txt" , "Likes on comments [1] post: $post_id comment: $comment_id " . $d['ec_likes']['id'] . PHP_EOL, FILE_APPEND | LOCK_EX);
       if(isset($d['ec_likes']['paging']) && empty($d['ec_likes']['data']))
         continue;
-      if(isset($d['ec_likes']['id']))
+      if(isset($d['ec_likes']['id']) && strpos($d['ec_likes']['id'], '_') !== false)
         $comment_id=substr(strrchr($d['ec_likes']['id'],'_'), 1);
       //print "$page_id $post_id $comment_id".PHP_EOL;
       //if(empty($d['ec_likes']['data']))
