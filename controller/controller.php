@@ -338,7 +338,8 @@ function pull_post($count=3) {
       "SELECT page_fb_id, post_fb_id, NOW() FROM ".
       "(SELECT page_fb_id, post_fb_id, if(status='pulled', -1, time_stamp) as ts FROM ".
       "post /*FORCE INDEX (id_status_timestamp)*/ WHERE ".
-      "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id IS NULL, time_stamp+86400, time_stamp) >14400) OR status IN ('new', 'recrawl')) ".
+      "((status='pulled' AND UNIX_TIMESTAMP()-IF(post_fb_id = 0, time_stamp+86400, time_stamp) >14400)) OR status IN ('new', 'recrawl') ".
+      "OR (post_fb_id=0 AND UNIX_TIMESTAMP()-time_stamp > 43200) ".
       "ORDER BY ts) AS tmp LIMIT 1500;"; #14400 == 4h.  86400 == 24h
     $db->exec($sql);
     $db->exec("UNLOCK TABLES;");
